@@ -27,20 +27,22 @@ import tensorflow as tf
 from tensorflow import keras
 
 def main(args,
-         initial_train_steps=50,
+         initial_train_steps=500,
          num_episodes=1000,
          log_period=5,
          save_period=5,
-         actor_fc=(256, 128),
-         critic_fc=(256, 128),
+         actor_fc=(512, 256),
+         critic_fc=(512, 256),
          num_actions=3,
-         state_size=1280,
+         state_size=[1280],
+         conv_size=None,
          realtime_mode=True):
     #env = gym.make('CartPole-v0')
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
                                        worker_id=idx,
+                                       mobilenet=True,
                                        realtime_mode=realtime_mode)
 
     log_dir = os.path.join(args.output_dir, "log")
@@ -50,6 +52,7 @@ def main(args,
     master_agent = MasterAgent(num_episodes=num_episodes,
                                num_actions=num_actions,
                                state_size=state_size,
+                               conv_size=conv_size,
                                env_func=env_func,
                                actor_fc=actor_fc,
                                critic_fc=critic_fc,

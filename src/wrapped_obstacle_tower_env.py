@@ -61,8 +61,9 @@ class WrappedObstacleTowerEnv():
         self._obstacle_tower_env = ObstacleTowerEnv(environment_filename, docker_training, worker_id, retro, timeout_wait, realtime_mode)
         self._flattener = ActionFlattener([3,3,2,3])
         self._action_space = self._flattener.action_space
-        self.mobilenet = True
-        self.image_module = WrappedKerasLayer(retro, True)
+        self.mobilenet = mobilenet
+        if mobilenet:
+            self.image_module = WrappedKerasLayer(retro, True)
         '''
         self._action_spec = array_spec.BoundedArraySpec(
             shape=self._action_space.shape,
@@ -119,7 +120,7 @@ class WrappedObstacleTowerEnv():
             observation =  self._preprocess_observation(observation)
             return self.image_module(observation)
         else:
-            return self.process_observation(observation)
+            return self._preprocess_observation(observation)
 
     def step(self, action):
         #if self._done:
@@ -142,7 +143,7 @@ class WrappedObstacleTowerEnv():
             observation = self._preprocess_observation(observation)
             return (self.image_module(observation), reward, done, info)
         else:
-            return (self.process_observation(observation), reward, done, info)
+            return (self._preprocess_observation(observation), reward, done, info)
 
     def close(self):
         self._obstacle_tower_env.close()
