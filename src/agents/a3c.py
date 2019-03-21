@@ -13,6 +13,7 @@ import numpy as np
 from queue import Queue
 
 import tensorflow as tf
+import tensorflow_hub as hub
 from tensorflow import keras
 
 def record(episode,
@@ -72,25 +73,35 @@ class ActorCriticModel(keras.Model):
     def __init__(self,
                  num_actions=None,
                  state_size=None,
+                 conv_size=None,
                  actor_fc=None,
                  critic_fc=None):
-        #super().__init__('mlp_policy')
         super().__init__()
-
+    
+        #self.conv_layers = [hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
+        #                                   output_shape=conv_size,
+        #                                   trainable=False)]
+        
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
 
         self.actor_logits = keras.layers.Dense(num_actions, name='policy_logits')
         self.value = keras.layers.Dense(1, name='value')
 
+        #self.conv_model = tf.keras.Sequential(self.conv_layers)
+        #self.conv_model.build([None] + state_size)
+
         self.actor_model = tf.keras.Sequential(self.actor_fc + [self.actor_logits])
-        self.actor_model.build((None, state_size))
+        self.actor_model.build([None] + state_size)
         self.critic_model = tf.keras.Sequential(self.critic_fc + [self.value])
-        self.critic_model.build((None, state_size))
+        self.critic_model.build([None] + state_size)
+        #self.critic_model.build((None, self.conv_model.layers[-1].output_shape))
 
         self.dist = ProbabilityDistribution()
+        self.get_action_value(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
 
     def call(self, inputs):
+        #inputs = self.conv_model(inputs)
         actor_logits = self.actor_model(inputs)
         value = self.critic_model(inputs)
 
@@ -107,14 +118,15 @@ class ActorCriticModel(keras.Model):
 
 class MasterAgent():
     def __init__(self,
-                 num_episodes=500,
+                 num_episodes=1000,
                  env_func=None,
                  num_actions=2,
-                 state_size=4,
-                 learning_rate=0.00001,
+                 state_size=[4],
+                 conv_size=None,
+                 learning_rate=0.0001,
                  gamma=0.99,
                  entropy_discount=0.05,
-                 value_discount=0.1,
+                 value_discount=0.01,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -132,6 +144,7 @@ class MasterAgent():
         self.num_episodes = num_episodes
         self.num_actions = num_actions
         self.state_size = state_size
+        self.conv_size = conv_size
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
 
@@ -144,6 +157,7 @@ class MasterAgent():
 
         self.global_model = ActorCriticModel(num_actions=self.num_actions,
                                              state_size=self.state_size,
+                                             conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
                                              critic_fc=self.critic_fc)
 
@@ -153,6 +167,7 @@ class MasterAgent():
         workers = [Worker(idx=i,
                    num_actions=self.num_actions,
                    state_size=self.state_size,
+                   conv_size=self.conv_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
                    gamma=self.gamma,
@@ -221,23 +236,24 @@ class MasterAgent():
         logits, values = self.global_model(
                                 tf.convert_to_tensor(np.vstack(memory.states),
                                 dtype=tf.float32))
-        logits = tf.nn.softmax(logits)
 
         # Get our advantages
         advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
 
         # Calculate our policy loss
-        entropy_loss = keras.losses.categorical_crossentropy(logits, logits)
-        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy()
-        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions), logits, sample_weight=tf.stop_gradient(advantage))
-        policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
+        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(logits),
+                                                             tf.nn.softmax(logits),
+                                                             from_logits=True)
+        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions)[:, None],
+                                                   logits)
+                                                   #sample_weight=tf.stop_gradient(advantage))
+        #policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
 
-        # Value loss
-        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards), values)
+        # Calculate our value loss
+        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
 
         return policy_loss + (value_loss * 0)#self.value_discount)
-        #return (value_loss * self.value_discount)
-        #return policy_loss
 
     def play(self):
         env = gym.make('CartPole-v0').unwrapped
@@ -274,7 +290,8 @@ class Worker(threading.Thread):
     def __init__(self,
                  idx=0,
                  num_actions=2,
-                 state_size=4,
+                 state_size=[4],
+                 conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
                  gamma=0.99,
@@ -292,17 +309,16 @@ class Worker(threading.Thread):
         super(Worker, self).__init__()
         self.num_actions = num_actions
         self.state_size = state_size
+        self.conv_size = conv_size
 
         self.opt = opt
         self.global_model = global_model
         self.local_model = ActorCriticModel(num_actions=self.num_actions,
                                             state_size=self.state_size,
+                                            conv_size=self.conv_size,
                                             actor_fc=actor_fc,
                                             critic_fc=critic_fc)
         self.local_model.set_weights(self.global_model.get_weights())
-        # Run model to build graph during init because it can't be done async
-        _ = self.local_model.get_action_value(
-                            tf.convert_to_tensor(np.random.random((1, self.state_size)), dtype=tf.float32))
 
         if env_func == None:
             self.env = gym.make('CartPole-v0').unwrapped
@@ -415,18 +431,21 @@ class Worker(threading.Thread):
         logits, values = self.local_model(
                                 tf.convert_to_tensor(np.vstack(memory.states),
                                 dtype=tf.float32))
-        logits = tf.nn.softmax(logits)
 
-        # Get our advantages
+        # Calculate our advantages
         advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
 
         # Calculate our policy loss
-        entropy_loss = keras.losses.categorical_crossentropy(logits, logits)
-        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy()
-        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions), logits, sample_weight=tf.stop_gradient(advantage))
+        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(logits),
+                                                             tf.nn.softmax(logits),
+                                                             from_logits=True)
+        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions)[:, None],
+                                                   logits,
+                                                   sample_weight=tf.stop_gradient(advantage))
         policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
 
-        # Value loss
-        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards), values)
+        # Calculate our value loss
+        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
 
         return policy_loss + (value_loss * self.value_discount)
