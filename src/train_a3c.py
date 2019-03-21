@@ -17,7 +17,7 @@ import gin
 import logging
 import argparse
 
-from src.agents.a3c import MasterAgent
+from src.agents.a3c import MasterAgent, Memory
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 
 import gym
@@ -27,27 +27,44 @@ import tensorflow as tf
 from tensorflow import keras
 
 def main(args,
+         initial_train_steps=50,
+         num_episodes=1000,
          log_period=5,
          save_period=5,
          actor_fc=(256, 128),
          critic_fc=(256, 128),
          num_actions=3,
-         state_size=1280):
+         state_size=1280,
+         realtime_mode=True):
     #env = gym.make('CartPole-v0')
 
     def env_func(idx):
-        return WrappedObstacleTowerEnv(args.env_filename, worker_id=idx)
+        return WrappedObstacleTowerEnv(args.env_filename,
+                                       worker_id=idx,
+                                       realtime_mode=realtime_mode)
 
-    summary_writer = tf.summary.create_file_writer(args.logdir)
+    log_dir = os.path.join(args.output_dir, "log")
+    save_dir = os.path.join(args.output_dir, "checkpoints")
+    summary_writer = tf.summary.create_file_writer(log_dir)
 
-    master_agent = MasterAgent(num_actions=num_actions,
+    master_agent = MasterAgent(num_episodes=num_episodes,
+                               num_actions=num_actions,
                                state_size=state_size,
                                env_func=env_func,
                                actor_fc=actor_fc,
-                               critic_fc=critic_fc)
+                               critic_fc=critic_fc,
+                               summary_writer=summary_writer,
+                               save_path=save_dir)
+
+    
+    if args.human_input != None:
+        print("Starting train on human input...")
+        master_agent.human_train(args.human_input, initial_train_steps)
+        print("Train done!")
 
     print("Starting train...")
-    master_agent.train()
+    master_agent.distributed_train()
+    print("Train done!")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('slideshow rl')
@@ -57,11 +74,11 @@ if __name__ == '__main__':
         type=str,
         default='data')
     parser.add_argument(
-        '--logdir',
+        '--env-filename',
         type=str,
         default=None)
     parser.add_argument(
-        '--env-filename',
+        '--human-input',
         type=str,
         default=None)
     parser.add_argument(

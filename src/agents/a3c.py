@@ -1,4 +1,6 @@
+
 import os
+import pickle
 import argparse
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
@@ -36,7 +38,7 @@ def record(episode,
         global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
     print(
         f"Episode: {episode} | "
-        f"Moving Average Reward: {int(global_ep_reward)} | "
+        f"Moving Average Reward: {global_ep_reward} | "
         f"Episode Reward: {int(episode_reward)} | "
         f"Loss: {int(total_loss / float(num_steps) * 1000) / 1000} | "
         f"Steps: {num_steps} | "
@@ -68,10 +70,10 @@ class ProbabilityDistribution(keras.Model):
 
 class ActorCriticModel(keras.Model):
     def __init__(self,
-             num_actions=None,
-             state_size=None,
-             actor_fc=None,
-             critic_fc=None):
+                 num_actions=None,
+                 state_size=None,
+                 actor_fc=None,
+                 critic_fc=None):
         #super().__init__('mlp_policy')
         super().__init__()
 
@@ -105,21 +107,37 @@ class ActorCriticModel(keras.Model):
 
 class MasterAgent():
     def __init__(self,
+                 num_episodes=500,
                  env_func=None,
                  num_actions=2,
                  state_size=4,
-                 learning_rate=0.0001,
+                 learning_rate=0.00001,
+                 gamma=0.99,
+                 entropy_discount=0.05,
+                 value_discount=0.1,
                  actor_fc=None,
                  critic_fc=None,
+                 summary_writer=None,
+                 log_period=10,
+                 checkpoint_period=10,
                  save_path="/tmp/a3c"):
+
         self.save_path = save_path
+        self.summary_writer = summary_writer
+        self.log_period = log_period
+        self.checkpoint_period = checkpoint_period
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
+        self.num_episodes = num_episodes
         self.num_actions = num_actions
         self.state_size = state_size
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
+
+        self.gamma = gamma
+        self.entropy_discount = entropy_discount
+        self.value_discount = value_discount
 
         self.opt = keras.optimizers.Adam(learning_rate)
         self.env_func = env_func
@@ -129,7 +147,7 @@ class MasterAgent():
                                              actor_fc=self.actor_fc,
                                              critic_fc=self.critic_fc)
 
-    def train(self):
+    def distributed_train(self):
         res_queue = Queue()
 
         workers = [Worker(idx=i,
@@ -137,10 +155,17 @@ class MasterAgent():
                    state_size=self.state_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
+                   gamma=self.gamma,
+                   entropy_discount=self.entropy_discount,
+                   value_discount=self.value_discount,
                    global_model=self.global_model,
                    opt=self.opt,
                    result_queue=res_queue,
                    env_func=self.env_func,
+                   max_episodes=self.num_episodes,
+                   summary_writer=self.summary_writer,
+                   log_period=self.log_period,
+                   checkpoint_period=self.checkpoint_period,
                    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
                    #save_path=self.save_path) for i in range(1)]
 
@@ -148,7 +173,7 @@ class MasterAgent():
             print("Starting worker {}".format(i))
             worker.start()
 
-        moving_average_rewards = []  # record episode reward to plot
+        moving_average_rewards = []
         while True:
             reward = res_queue.get()
             if reward is not None:
@@ -159,6 +184,60 @@ class MasterAgent():
         print("Done!")
         self.play()
         return moving_average_rewards
+
+    def human_train(self, data_path, train_steps):
+        # Load human input from pickle file
+        data_file = open(data_path, 'rb')
+        memory_list = pickle.load(data_file)
+        data_file.close()
+
+        for train_step in range(train_steps):
+            episode_loss = []
+            for memory in memory_list:
+                # Catch for human accidently skipping twice and making an empty episode
+                if len(memory.states) == 0: continue
+                with tf.GradientTape() as tape:
+                    total_loss = self.compute_loss(memory, self.gamma)
+            
+                # Calculate and apply policy gradients
+                total_grads = tape.gradient(total_loss, self.global_model.trainable_weights)
+                self.opt.apply_gradients(zip(total_grads,
+                                             self.global_model.trainable_weights))
+                episode_loss.append(tf.reduce_sum(total_loss))
+            print("Step {} | Loss: {}".format(train_step, sum(episode_loss) / len(episode_loss)))
+            
+    def compute_loss(self,
+                     memory,
+                     gamma):
+        # Get discounted rewards
+        reward_sum = 0.
+        discounted_rewards = []
+        for reward in memory.rewards[::-1]:  # reverse buffer r
+            reward_sum = reward + gamma * reward_sum
+            discounted_rewards.append(reward_sum)
+        discounted_rewards.reverse()
+
+        # Get logits and values
+        logits, values = self.global_model(
+                                tf.convert_to_tensor(np.vstack(memory.states),
+                                dtype=tf.float32))
+        logits = tf.nn.softmax(logits)
+
+        # Get our advantages
+        advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
+
+        # Calculate our policy loss
+        entropy_loss = keras.losses.categorical_crossentropy(logits, logits)
+        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy()
+        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions), logits, sample_weight=tf.stop_gradient(advantage))
+        policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
+
+        # Value loss
+        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards), values)
+
+        return policy_loss + (value_loss * 0)#self.value_discount)
+        #return (value_loss * self.value_discount)
+        #return policy_loss
 
     def play(self):
         env = gym.make('CartPole-v0').unwrapped
@@ -188,7 +267,7 @@ class Worker(threading.Thread):
     # Set up global variables across different threads
     global_episode = 0
     # Moving average reward
-    global_moving_average_reward = 0
+    global_moving_average_reward = 0.0
     best_score = 0
     save_lock = threading.Lock()
 
@@ -198,13 +277,18 @@ class Worker(threading.Thread):
                  state_size=4,
                  actor_fc=None,
                  critic_fc=None,
+                 gamma=0.99,
+                 entropy_discount=0.01,
+                 value_discount=0.5,
                  global_model=None,
                  opt=None,
                  result_queue=None,
                  env_func=None,
                  max_episodes=500,
-                 save_path='/tmp/a3c/workers',
-                 gamma=0.99):
+                 summary_writer=None,
+                 log_period=10,
+                 checkpoint_period=10,
+                 save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
         self.num_actions = num_actions
         self.state_size = state_size
@@ -227,11 +311,17 @@ class Worker(threading.Thread):
             self.env = env_func(idx)
         print("Environment built!")
 
+        self.gamma = gamma
+        self.entropy_discount = entropy_discount
+        self.value_discount = value_discount
+
         self.result_queue = result_queue
         self.save_path = save_path
+        self.log_period = log_period
+        self.checkpoint_period = checkpoint_period
+        self.summary_writer = summary_writer
         self.worker_idx = idx
         self.ep_loss = 0.0
-        self.gamma = gamma
         self.max_episodes = max_episodes
 
     def run(self):
@@ -243,6 +333,7 @@ class Worker(threading.Thread):
             ep_reward = 0.
             ep_steps = 0
             self.ep_loss = 0
+            current_episode = Worker.global_episode
 
             time_count = 0
             done = False
@@ -274,10 +365,12 @@ class Worker(threading.Thread):
                     mem.clear()
                     time_count = 0
 
+                    # Metrics logging and saving
                     Worker.global_moving_average_reward = \
                     record(Worker.global_episode, ep_reward, self.worker_idx,
                          Worker.global_moving_average_reward, self.result_queue,
                          self.ep_loss, ep_steps)
+
                     # We must use a lock to save our model and to print to prevent data races.
                     if ep_reward > Worker.best_score:
                         with Worker.save_lock:
@@ -287,6 +380,17 @@ class Worker(threading.Thread):
                                 os.path.join(self.save_path, 'model.h5')
                             )
                             Worker.best_score = ep_reward
+
+                    if current_episode % self.log_period == 0:
+                        with self.summary_writer.as_default():
+                            tf.summary.scalar("Episode Reward", ep_reward, current_episode)
+                            tf.summary.scalar("Episode Loss", tf.reduce_sum(total_loss), current_episode)
+                            tf.summary.scalar("Moving Global Average", Worker.global_moving_average_reward, current_episode)
+                    if current_episode % self.checkpoint_period == 0:
+                        _save_path = os.path.join(self.save_path, "worker_{}_model_{}".format(self.worker_idx, current_episode))
+                        self.local_model.save_weights(_save_path)
+                        print("Checkpoint saved to {}".format(_save_path))
+
                     Worker.global_episode += 1
                 else:
                     ep_steps += 1
@@ -298,6 +402,7 @@ class Worker(threading.Thread):
     def compute_loss(self,
                      memory,
                      gamma):
+
         # Get discounted rewards
         reward_sum = 0.
         discounted_rewards = []
@@ -310,27 +415,18 @@ class Worker(threading.Thread):
         logits, values = self.local_model(
                                 tf.convert_to_tensor(np.vstack(memory.states),
                                 dtype=tf.float32))
+        logits = tf.nn.softmax(logits)
 
         # Get our advantages
         advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
 
         # Calculate our policy loss
-        entropy_loss = keras.losses.categorical_crossentropy(logits, logits, from_logits=True)
-        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions), logits, sample_weight=advantage)
-        policy_loss = policy_loss - (0.01 * entropy_loss)
+        entropy_loss = keras.losses.categorical_crossentropy(logits, logits)
+        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy()
+        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions), logits, sample_weight=tf.stop_gradient(advantage))
+        policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
 
         # Value loss
         value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards), values)
 
-        return policy_loss + (value_loss * 0.5)
-
-
-if __name__ == '__main__':
-  print(args)
-  master = MasterAgent()
-  if args.train:
-    master.train()
-  else:
-    master.play()
-
+        return policy_loss + (value_loss * self.value_discount)
