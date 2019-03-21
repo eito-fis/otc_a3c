@@ -1,7 +1,7 @@
+import argparse
 import pickle
 
 import numpy as np
-
 import cv2
 
 from src.agents.a3c import Memory
