@@ -31,6 +31,7 @@ def main(args,
          num_episodes=1000,
          log_period=5,
          save_period=5,
+         visual_period=1,
          actor_fc=(512, 256),
          critic_fc=(512, 256),
          num_actions=3,
@@ -57,7 +58,9 @@ def main(args,
                                actor_fc=actor_fc,
                                critic_fc=critic_fc,
                                summary_writer=summary_writer,
-                               save_path=save_dir)
+                               save_path=save_dir,
+                               visual_path=args.visual_dir,
+                               visual_period=visual_period)
 
     
     if args.human_input != None:
@@ -82,6 +85,10 @@ if __name__ == '__main__':
         default=None)
     parser.add_argument(
         '--human-input',
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--visual-dir',
         type=str,
         default=None)
     parser.add_argument(
