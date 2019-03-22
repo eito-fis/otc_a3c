@@ -66,6 +66,7 @@ class EncoderModel(keras.Model):
                                             strides=2,
                                             padding="SAME",
                                             activation="relu")
+        self.global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
 
         self.encoder = tf.keras.Sequential([self.conv1,
                                             self.conv2,
