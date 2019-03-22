@@ -120,8 +120,8 @@ all_states = np.array(all_states)
 print(all_states.shape)
 
 model_name = "mobilenet"
-tbCallBack = keras.callbacks.TensorBoard(log_dir="classifier/{model_name}", histogram_freq=0, write_graph=True, write_images=True)
-filepath = "classifier/{model_name}/{epoch:02d}.hdf5"
+tbCallBack = keras.callbacks.TensorBoard(log_dir="classifier/mobilenet", histogram_freq=0, write_graph=True, write_images=True)
+filepath = "classifier/mobilenet/{epoch:02d}.hdf5"
 saveCallBack = keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', period=5)
 
 
