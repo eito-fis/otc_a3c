@@ -62,8 +62,8 @@ if __name__ == '__main__':
         print(memory_buffer)
         print("Input buffer loaded.")
     else:
-        print("Creating new memory buffer.")
         memory_buffer = []
+        print("Created new memory buffer.")
 
     #INSTANTIATE MEMORY BUFFER#
     os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
