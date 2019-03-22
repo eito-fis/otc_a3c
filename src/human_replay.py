@@ -50,14 +50,15 @@ if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser('human_replay')
     parser.add_argument('--env-filepath', type=str, default='../ObstacleTower/obstacletower')
-    parser.add_argument('--buffer-filepath', type=str, default='./buffers/human_replay_buffer')
+    parser.add_argument('--output-filepath', type=str, default='./buffers/human_replay_buffer')
+    parser.add_argument('--input-filepath', type=str, default=None)
     parser.add_argument('--episodes', type=int, default=50)
     parser.add_argument('--max-steps', type=int, default=50)
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
     env_filepath = args.env_filepath
-    buffer_filepath = args.buffer_filepath
+    output_filepath = args.output_filepath
     episodes = args.episodes
     max_steps = args.max_steps
 
@@ -66,11 +67,19 @@ if __name__ == '__main__':
     env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True)
     print("Environment built.")
 
+    if args.input_filepath:
+        input_filepath = args.input_filepath
+        input_memory_file = open(input_filepath, 'wb')
+        memory_buffer = pickle.load(input_memory_file)
+    else:
+        memory_buffer = []
+
     #INSTANTIATE MEMORY BUFFER#
-    buffer_file = open(buffer_filepath, 'wb+')
-    memory_buffer = []
+    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+    output_file = open(output_filepath, 'wb+')
     for episode in range(episodes):
         mem = run(env, max_steps)
         memory_buffer.append(mem)
-    pickle.dump(memory_buffer, buffer_file)
-
+    pickle.dump(memory_buffer, output_file)
+    
+    buffer_file.close()
