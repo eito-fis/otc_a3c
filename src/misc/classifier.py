@@ -22,11 +22,10 @@ class EncoderModel(keras.Model):
         #                                       include_top=False,
         #                                       weights='imagenet')
         #self.mobilenet.trainable = False
-        self.mobilenet = tf.keras.applications.InceptionResNetV2(input_shape=(128, 128, 3),
-                                               include_top=False,
-                                               weights='imagenet')
-        self.mobilenet.trainable = False
-        '''
+        #self.mobilenet = tf.keras.applications.InceptionResNetV2(input_shape=(128, 128, 3),
+        #                                       include_top=False,
+        #                                       weights='imagenet')
+        #self.mobilenet.trainable = False
         self.conv1 = tf.keras.layers.Conv2D(filters=16,
                                             kernel_size=3,
                                             strides=1,
@@ -84,6 +83,7 @@ class EncoderModel(keras.Model):
         self.encoder = tf.keras.Sequential([self.mobilenet,
                                             self.global_average_layer,
                                             self.dense3])
+        '''
         self.encoder.build([None] + [128, 128, 3])
 
     def call(self, inputs):
