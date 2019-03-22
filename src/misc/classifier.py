@@ -18,13 +18,69 @@ class EncoderModel(keras.Model):
         #self.mobilenet = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
         #                                   output_shape=[1280],
         #                                   trainable=False)
-        self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(128, 128, 3),
+        #self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(128, 128, 3),
+        #                                       include_top=False,
+        #                                       weights='imagenet')
+        #self.mobilenet.trainable = False
+        self.mobilenet = tf.keras.applications.InceptionResNetV2(input_shape=(128, 128, 3),
                                                include_top=False,
                                                weights='imagenet')
         self.mobilenet.trainable = False
+        '''
+        self.conv1 = tf.keras.layers.Conv2D(filters=16,
+                                            kernel_size=3,
+                                            strides=1,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv2 = tf.keras.layers.Conv2D(filters=16,
+                                            kernel_size=3,
+                                            strides=2,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv3 = tf.keras.layers.Conv2D(filters=32,
+                                            kernel_size=3,
+                                            strides=1,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv4 = tf.keras.layers.Conv2D(filters=32,
+                                            kernel_size=3,
+                                            strides=2,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv5 = tf.keras.layers.Conv2D(filters=64,
+                                            kernel_size=3,
+                                            strides=1,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv6 = tf.keras.layers.Conv2D(filters=64,
+                                            kernel_size=3,
+                                            strides=2,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv7 = tf.keras.layers.Conv2D(filters=128,
+                                            kernel_size=3,
+                                            strides=1,
+                                            padding="SAME",
+                                            activation="relu")
+        self.conv8 = tf.keras.layers.Conv2D(filters=128,
+                                            kernel_size=3,
+                                            strides=2,
+                                            padding="SAME",
+                                            activation="relu")
 
         self.global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
         self.dense3 = keras.layers.Dense(3, activation="sigmoid")
+        self.encoder = tf.keras.Sequential([self.conv1,
+                                            self.conv2,
+                                            self.conv3,
+                                            self.conv4,
+                                            self.conv5,
+                                            self.conv6,
+                                            self.conv7,
+                                            self.conv8,
+                                            self.global_average_layer,
+                                            self.dense3])
+        '''
         self.encoder = tf.keras.Sequential([self.mobilenet,
                                             self.global_average_layer,
                                             self.dense3])
@@ -41,6 +97,7 @@ encoder = EncoderModel()
 encoder.compile(
     optimizer=keras.optimizers.RMSprop(lr=0.0005),
     metrics=["accuracy"],
+    shuffle=True,
     loss="sparse_categorical_crossentropy"
 )
 
@@ -48,9 +105,9 @@ all_actions = np.array([frame for memory in memory_list for frame in memory.acti
 all_states = []
 for memory in memory_list:
     for frame in memory.states:
-        frame[:, :, 0] = np.mean(frame, axis=-1)
-        frame[:, :, 1] = np.mean(frame, axis=-1)
-        frame[:, :, 2] = np.mean(frame, axis=-1)
+        #frame[:, :, 0] = np.mean(frame, axis=-1)
+        #frame[:, :, 1] = np.mean(frame, axis=-1)
+        #frame[:, :, 2] = np.mean(frame, axis=-1)
         frame = Image.fromarray(frame)
         frame = frame.resize((128, 128), Image.NEAREST)
         all_states.append(np.array(frame, dtype=np.float32))
@@ -59,8 +116,9 @@ all_states = np.array(all_states)
 
 print(all_states.shape)
 
-tbCallBack = keras.callbacks.TensorBoard(log_dir="classifier", histogram_freq=0, write_graph=True, write_images=True)
-filepath = "classifier/{epoch:02d}.hdf5"
+model_name = "inception"
+tbCallBack = keras.callbacks.TensorBoard(log_dir="classifier/{model_name}", histogram_freq=0, write_graph=True, write_images=True)
+filepath = "classifier/{model_name}/{epoch:02d}.hdf5"
 saveCallBack = keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', period=5)
 
 
