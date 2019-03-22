@@ -95,11 +95,20 @@ class EncoderModel(keras.Model):
 data_file = open("human_input/human_replay_200_image", 'rb')
 memory_list = pickle.load(data_file)
 data_file.close()
-encoder = EncoderModel()
+
+#encoder = EncoderModel()
+mobilenet = tf.keras.applications.MobileNetV2(input_shape=(128, 128, 3),
+                                              include_top=False,
+                                              weights='imagenet',
+                                              pooling="avg")
+mobilenet.trainable = False
+encoder = tf.keras.Sequential([mobilenet,
+                               tf.keras.layers.Dense(3, activation="softmax")])
+
+
 encoder.compile(
-    optimizer=keras.optimizers.RMSprop(lr=0.01),
+    optimizer=keras.optimizers.RMSprop(lr=0.0001),
     metrics=["accuracy"],
-    shuffle=True,
     loss="sparse_categorical_crossentropy"
 )
 
@@ -132,12 +141,12 @@ print("Start training...")
 encoder.fit(all_states,
             all_actions,
             batch_size=100,
-            epochs=1000,
+            epochs=25,
             callbacks=[tbCallBack, saveCallBack])
 print("Done!")
 
 predictions = encoder.predict_on_batch(all_states)
-predicitons = [max(prediction) for prediciton in predictions]
+predicitons = [max(prediction) for prediction in predictions]
 
 correct = 0
 incorrect = []
