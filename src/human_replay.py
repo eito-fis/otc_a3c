@@ -5,22 +5,7 @@ import getch
 import pickle
 
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
-
-class Memory:
-    def __init__(self):
-        self.states = []
-        self.actions = []
-        self.rewards = []
-
-    def store(self, state, action, reward):
-        self.states.append(state)
-        self.actions.append(action)
-        self.rewards.append(reward)
-
-    def clear(self):
-        self.states = []
-        self.actions = []
-        self.rewards = []
+from src.agents.a3c import Memory
 
 def input_action():
     possible_actions = ['w', 'k', 'l', ' ', 'p']
@@ -31,7 +16,7 @@ def input_action():
         else:
             print("Invalid input.")
 
-def run(env, max_steps):
+def run(env):
     mem = Memory()
     current_state = env.reset()
     mem.clear()
@@ -50,27 +35,44 @@ if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser('human_replay')
     parser.add_argument('--env-filepath', type=str, default='../ObstacleTower/obstacletower')
-    parser.add_argument('--buffer-filepath', type=str, default='./buffers/human_replay_buffer')
+    parser.add_argument('--output-filepath', type=str, default='./buffers/human_replay_buffer')
+    parser.add_argument('--input-filepath', type=str, default=None)
     parser.add_argument('--episodes', type=int, default=50)
-    parser.add_argument('--max-steps', type=int, default=50)
+    parser.add_argument('--period', type=int, default=50)
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
     env_filepath = args.env_filepath
-    buffer_filepath = args.buffer_filepath
+    output_filepath = args.output_filepath
     episodes = args.episodes
-    max_steps = args.max_steps
+    period = args.period
 
     #BUILD ENVIRONMENT#
     print("Building environment...")
-    env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True)
+    env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True)
     print("Environment built.")
 
-    #INSTANTIATE MEMORY BUFFER#
-    buffer_file = open(buffer_filepath, 'wb+')
-    memory_buffer = []
-    for episode in range(episodes):
-        mem = run(env, max_steps)
-        memory_buffer.append(mem)
-    pickle.dump(memory_buffer, buffer_file)
+    if args.input_filepath:
+        print("Loading input buffer file...")
+        input_filepath = args.input_filepath
+        input_buffer_file = open(input_filepath, 'rb')
+        memory_buffer = pickle.load(input_buffer_file)
+        input_buffer_file.close()
+        print("Input buffer loaded.")
+    else:
+        memory_buffer = []
+        print("Created new memory buffer.")
 
+    #INSTANTIATE MEMORY BUFFER#
+    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+    print("Time to play!")
+    for episode in range(1,episodes+1):
+        mem = run(env)
+        memory_buffer.append(mem)
+        if episode % period == 0:
+            output_file = open(output_filepath, 'wb+')
+            pickle.dump(memory_buffer, output_file)
+            print("Finished episode {}. Memory buffer saved.".format(episode))
+            output_file.close()
+    
+    output_file.close()

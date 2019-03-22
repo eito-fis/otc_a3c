@@ -1,3 +1,4 @@
+import os
 import argparse
 import pickle
 
@@ -54,7 +55,7 @@ if __name__ == '__main__':
 
     #LOAD FILE#
     data_path = args.memory_path
-    data_file = open(data_path, 'rb')
+    data_file = open(data_path, 'rb+')
     memory = pickle.load(data_file)
     data_file.close()
 
@@ -72,6 +73,7 @@ if __name__ == '__main__':
 
     #INIT VIDEO#
     output = args.output
+    os.makedirs(os.path.dirname(output), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video = cv2.VideoWriter(output, fourcc, fps, (width,height))
 
@@ -81,7 +83,7 @@ if __name__ == '__main__':
         frame = np.zeros((height,width,3),dtype=np.uint8)
         draw_observation(frame,obs)
         cv2.putText(frame,'Step: {}'.format(i),(750,100),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
-        cv2.putText(frame,'Value: {}'.format(val),(750,220),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
+        cv2.putText(frame,'Value: {}'.format(val),(750,140),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
         draw_distributions(frame, dist, dist_max)
 
         video.write(frame)
