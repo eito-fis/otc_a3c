@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import pickle
 import numpy as np
 
+from PIL import Image
+
 class EncoderModel(keras.Model):
     def __init__(self):
         super().__init__()
@@ -16,7 +18,7 @@ class EncoderModel(keras.Model):
         #self.mobilenet = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
         #                                   output_shape=[1280],
         #                                   trainable=False)
-        self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(224, 224, 3),
+        self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(128, 128, 3),
                                                include_top=False,
                                                weights='imagenet')
         self.mobilenet.trainable = False
@@ -26,7 +28,7 @@ class EncoderModel(keras.Model):
         self.encoder = tf.keras.Sequential([self.mobilenet,
                                             self.global_average_layer,
                                             self.dense3])
-        self.encoder.build([None] + [224, 224, 3])
+        self.encoder.build([None] + [128, 128, 3])
 
     def call(self, inputs):
         out = self.encoder(inputs)
@@ -43,7 +45,17 @@ encoder.compile(
 )
 
 all_actions = np.array([frame for memory in memory_list for frame in memory.actions])
-all_states = np.array([frame.astype(np.float32) for memory in memory_list for frame in memory.states])
+all_states = []
+for memory in memory_list:
+    for frame in memory.states:
+        frame[:, :, 0] = np.mean(frame, axis=-1)
+        frame[:, :, 1] = np.mean(frame, axis=-1)
+        frame[:, :, 2] = np.mean(frame, axis=-1)
+        frame = Image.fromarray(frame)
+        frame = frame.resize((128, 128), Image.NEAREST)
+        all_states.append(np.array(frame, dtype=np.float32))
+all_states = np.array(all_states)
+#all_states = np.array([frame.astype(np.float32) for memory in memory_list for frame in memory.states])
 
 print(all_states.shape)
 
