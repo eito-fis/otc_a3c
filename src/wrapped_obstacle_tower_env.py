@@ -88,10 +88,10 @@ class WrappedObstacleTowerEnv():
             '''
         self._done = False
 
-    def action_spec(self) -> array_spec.BoundedArraySpec:
+    def action_spec(self):
         return self._action_spec
 
-    def observation_spec(self) -> array_spec.BoundedArraySpec:
+    def observation_spec(self):
         return self._observation_spec
 
     def process_observation(self, observation):
