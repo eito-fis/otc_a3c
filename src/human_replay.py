@@ -58,8 +58,6 @@ if __name__ == '__main__':
         input_buffer_file = open(input_filepath, 'rb')
         memory_buffer = pickle.load(input_buffer_file)
         input_buffer_file.close()
-        print("memory_buffer size: ".format(len(memory_buffer)))
-        print(memory_buffer)
         print("Input buffer loaded.")
     else:
         memory_buffer = []
