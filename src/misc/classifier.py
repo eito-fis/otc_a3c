@@ -103,7 +103,7 @@ mobilenet = tf.keras.applications.MobileNetV2(input_shape=(128, 128, 3),
                                               pooling="avg")
 mobilenet.trainable = False
 encoder = tf.keras.Sequential([mobilenet,
-                               tf.keras.layers.Dense(512, activation="relu")
+                               tf.keras.layers.Dense(512, activation="relu"),
                                tf.keras.layers.Dense(3, activation="softmax")])
 
 
@@ -141,7 +141,7 @@ saveCallBack = keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', per
 print("Start training...")
 encoder.fit(all_states,
             all_actions,
-            batch_size=1000,
+            batch_size=100,
             epochs=25,
             callbacks=[tbCallBack, saveCallBack])
 print("Done!")
