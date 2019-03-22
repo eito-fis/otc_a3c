@@ -103,7 +103,7 @@ encoder.compile(
     loss="sparse_categorical_crossentropy"
 )
 
-all_actions = np.array([frame for memory in memory_list for frame in memory.actions])
+all_actions = np.array([frame for memory in memory_list for frame in memory.actions])[:,None]
 all_states = []
 for memory in memory_list:
     for frame in memory.states:
@@ -117,9 +117,10 @@ for memory in memory_list:
 all_states = np.array(all_states)
 #all_states = np.array([frame.astype(np.float32) for memory in memory_list for frame in memory.states])
 print(all_states[0])
+print(all_states.shape)
+print(all_actions.shape)
 input()
 
-print(all_states.shape)
 
 model_name = "mobilenet"
 tbCallBack = keras.callbacks.TensorBoard(log_dir="classifier/mobilenet", histogram_freq=0, write_graph=True, write_images=True)
