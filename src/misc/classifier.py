@@ -21,7 +21,7 @@ class EncoderModel(keras.Model):
         self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(160, 160, 3),
                                                include_top=False,
                                                weights='imagenet')
-        #self.mobilenet.trainable = False
+        self.mobilenet.trainable = False
         #self.mobilenet = tf.keras.applications.InceptionResNetV2(input_shape=(128, 128, 3),
         #                                       include_top=False,
         #                                       weights='imagenet')
@@ -128,7 +128,7 @@ saveCallBack = keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', per
 print("Start training...")
 encoder.fit(all_states,
             all_actions,
-            batch_size=200,
+            batch_size=100,
             epochs=1000,
             callbacks=[tbCallBack, saveCallBack])
 print("Done!")
