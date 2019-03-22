@@ -58,7 +58,7 @@ class WrappedObstacleTowerEnv():
         self._action_space = self._flattener.action_space
         self.mobilenet = mobilenet
         if mobilenet:
-            self.image_module = WrappedKerasLayer(retro, True)
+            self.image_module = WrappedKerasLayer(retro, self.mobilenet)
         '''
         self._action_spec = array_spec.BoundedArraySpec(
             shape=self._action_space.shape,
@@ -136,7 +136,7 @@ class WrappedObstacleTowerEnv():
         
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
             observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info, observation)
+            return (self.image_module(observation), reward, done, info), observation
         else:
             return (self._preprocess_observation(observation), reward, done, info)
 

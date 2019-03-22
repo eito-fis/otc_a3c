@@ -4,6 +4,10 @@ import argparse
 import getch
 import pickle
 
+from collections import Counter
+import random
+import numpy as np
+
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 from src.agents.a3c import Memory
 
@@ -18,7 +22,7 @@ def input_action():
 
 def run(env):
     mem = Memory()
-    current_state = env.reset()
+    current_state, _ = env.reset()
     mem.clear()
 
     done = False
@@ -26,10 +30,34 @@ def run(env):
         action = input_action()
         if action == 4:
             break
-        new_state, reward, done, _ = env.step(action)
+        new_state, reward, done, _, _ = env.step(action)
         mem.store(current_state, action, reward)
 
     return mem
+
+def augment_data(memory_buffer, num_duplications, num_remove_actions):
+    for memory in memory_buffer:
+        for i in range(len(memory.actions)):
+            if memory.actions[i] > 0:
+                for _ in range(num_duplications):
+                    memory.store(memory.states[i], memory.actions[i], memory.rewards[i])
+
+    i = 0
+    while i < num_remove_actions:
+        memory = random.choice(memory_buffer)
+        forward_actions = np.where(np.array(memory.actions) == 0)[0]
+        if forward_actions.any():
+            action = np.random.choice(forward_actions)
+            del memory.actions[action]
+            del memory.states[action]
+            del memory.rewards[action]
+            i += 1
+
+def data_statistics(memory_buffer):
+    count_forward = sum(action == 0 for memory in memory_buffer for action in memory.actions)
+    count_left = sum(action == 1 for memory in memory_buffer for action in memory.actions)
+    count_right = sum(action == 2 for memory in memory_buffer for action in memory.actions)
+    print("forward: {}\nleft: {}\nright: {}".format(count_forward, count_left, count_right))
 
 if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
@@ -39,6 +67,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-filepath', type=str, default=None)
     parser.add_argument('--episodes', type=int, default=50)
     parser.add_argument('--period', type=int, default=50)
+    parser.add_argument('--augment', default=False, action='store_true')
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
@@ -46,11 +75,6 @@ if __name__ == '__main__':
     output_filepath = args.output_filepath
     episodes = args.episodes
     period = args.period
-
-    #BUILD ENVIRONMENT#
-    print("Building environment...")
-    env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True)
-    print("Environment built.")
 
     if args.input_filepath:
         print("Loading input buffer file...")
@@ -63,16 +87,36 @@ if __name__ == '__main__':
         memory_buffer = []
         print("Created new memory buffer.")
 
-    #INSTANTIATE MEMORY BUFFER#
-    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
-    print("Time to play!")
-    for episode in range(1,episodes+1):
-        mem = run(env)
-        memory_buffer.append(mem)
-        if episode % period == 0:
-            output_file = open(output_filepath, 'wb+')
-            pickle.dump(memory_buffer, output_file)
-            print("Finished episode {}. Memory buffer saved.".format(episode))
-            output_file.close()
-    
+    if args.augment:
+        #DATA AUGMENTATION#
+        if not args.input_filepath:
+            print("Input file must be specified for augementation.")
+            exit()
+        output_file = open(output_filepath, 'wb+')
+        num_duplications = 4
+        num_remove_actions = 1500
+        data_statistics(memory_buffer)
+        augment_data(memory_buffer, num_duplications, num_remove_actions)
+        data_statistics(memory_buffer)
+        pickle.dump(memory_buffer, output_file)
+    else:
+        #BUILD ENVIRONMENT#
+        print("Building environment...")
+        env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True)
+        print("Environment built.")
+
+        #INSTANTIATE MEMORY BUFFER#
+        os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+        print("Time to play!")
+        for episode in range(1,episodes+1):
+            mem = run(env)
+            memory_buffer.append(mem)
+            if episode % period == 0:
+                output_file = open(output_filepath, 'wb+')
+                pickle.dump(memory_buffer, output_file)
+                print("Finished episode {}. Memory buffer saved.".format(episode))
+                output_file.close()
+        output_file = open(output_filepath, 'wb+')
+        pickle.dump(memory_buffer, output_file)
+        
     output_file.close()
