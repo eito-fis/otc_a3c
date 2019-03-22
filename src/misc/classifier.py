@@ -97,7 +97,7 @@ memory_list = pickle.load(data_file)
 data_file.close()
 encoder = EncoderModel()
 encoder.compile(
-    optimizer=keras.optimizers.RMSprop(lr=0.0005),
+    optimizer=keras.optimizers.RMSprop(lr=0.01),
     metrics=["accuracy"],
     shuffle=True,
     loss="sparse_categorical_crossentropy"
