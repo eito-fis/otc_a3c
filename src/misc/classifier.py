@@ -112,6 +112,7 @@ for memory in memory_list:
         #frame[:, :, 2] = np.mean(frame, axis=-1)
         frame = Image.fromarray(frame)
         frame = frame.resize((160, 160), Image.NEAREST)
+        frame = frame.crop((0, 15, 160, 160))
         all_states.append(np.array(frame, dtype=np.float32))
 all_states = np.array(all_states)
 #all_states = np.array([frame.astype(np.float32) for memory in memory_list for frame in memory.states])
