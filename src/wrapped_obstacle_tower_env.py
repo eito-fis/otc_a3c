@@ -4,15 +4,10 @@ import numpy as np
 from obstacle_tower_env import ObstacleTowerEnv
 from obstacle_tower_env import ActionFlattener
 
-from tf_agents.environments import py_environment
-from tf_agents.environments import time_step
-from tf_agents.specs import array_spec
-
 import tensorflow as tf
 import tensorflow_hub as hub
 
 from PIL import Image
-import cv2
 
 class WrappedKerasLayer(tf.keras.layers.Layer):
     def __init__(self, retro, mobilenet):
