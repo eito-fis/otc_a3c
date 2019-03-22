@@ -18,7 +18,7 @@ class EncoderModel(keras.Model):
         #self.mobilenet = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
         #                                   output_shape=[1280],
         #                                   trainable=False)
-        self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(168, 168, 3),
+        self.mobilenet = tf.keras.applications.MobileNetV2(input_shape=(160, 160, 3),
                                                include_top=False,
                                                weights='imagenet')
         #self.mobilenet.trainable = False
@@ -86,7 +86,7 @@ class EncoderModel(keras.Model):
         self.encoder = tf.keras.Sequential([self.mobilenet,
                                             self.global_average_layer,
                                             self.dense3])
-        self.encoder.build([None] + [168, 168, 3])
+        self.encoder.build([None] + [160, 160, 3])
 
     def call(self, inputs):
         out = self.encoder(inputs)
@@ -111,7 +111,7 @@ for memory in memory_list:
         #frame[:, :, 1] = np.mean(frame, axis=-1)
         #frame[:, :, 2] = np.mean(frame, axis=-1)
         frame = Image.fromarray(frame)
-        frame = frame.resize((168, 168), Image.NEAREST)
+        frame = frame.resize((160, 160), Image.NEAREST)
         all_states.append(np.array(frame, dtype=np.float32))
 all_states = np.array(all_states)
 #all_states = np.array([frame.astype(np.float32) for memory in memory_list for frame in memory.states])
