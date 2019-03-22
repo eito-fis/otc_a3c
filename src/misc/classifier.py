@@ -103,6 +103,7 @@ mobilenet = tf.keras.applications.MobileNetV2(input_shape=(128, 128, 3),
                                               pooling="avg")
 mobilenet.trainable = False
 encoder = tf.keras.Sequential([mobilenet,
+                               tf.keras.layers.Dense(512, activation="relu")
                                tf.keras.layers.Dense(3, activation="softmax")])
 
 
@@ -140,22 +141,25 @@ saveCallBack = keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', per
 print("Start training...")
 encoder.fit(all_states,
             all_actions,
-            batch_size=100,
+            batch_size=1000,
             epochs=25,
             callbacks=[tbCallBack, saveCallBack])
 print("Done!")
 
-predictions = encoder.predict_on_batch(all_states)
-predicitons = [max(prediction) for prediction in predictions]
-
+old = 0
 correct = 0
 incorrect = []
-for label, predict, image in zip(all_actions, predictions, all_states):
-    if label == predict:
-        correct += 1
-    else:
-        incorrect.append((label, predict, image))
-print("Accuracy: {}".format(correct / len(all_actions)))
+for cut in [1000, 2000, 3000, 4000, 4682]:
+    predictions = encoder.predict_on_batch(all_states[old: cut])
+    old = cut
+    predicitons = [max(prediction) for prediction in predictions]
+
+    for label, predict, image in zip(all_actions, predictions, all_states):
+        if label == predict:
+            correct += 1
+        else:
+            incorrect.append((label, predict, image))
+    print("Accuracy: {}".format(correct / len(all_actions)))
 
 fig = plt.figure(figsize=(len(incorrect), len(incorrect)))
 ax = []
