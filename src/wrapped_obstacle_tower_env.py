@@ -118,7 +118,7 @@ class WrappedObstacleTowerEnv():
         self._done = False
         if self.mobilenet:
             observation =  self._preprocess_observation(observation)
-            return self.image_module(observation)
+            return self.image_module(observation), observation
         else:
             return self._preprocess_observation(observation)
 
@@ -141,7 +141,7 @@ class WrappedObstacleTowerEnv():
         
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
             observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info)
+            return (self.image_module(observation), reward, done, info, observation)
         else:
             return (self._preprocess_observation(observation), reward, done, info)
 

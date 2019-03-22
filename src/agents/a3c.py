@@ -16,6 +16,8 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow import keras
 
+from collections import Counter
+
 def record(episode,
            episode_reward,
            worker_idx,
@@ -33,10 +35,7 @@ def record(episode,
     total_loss: The total loss accumualted over the current episode
     num_steps: The number of steps the episode took to complete
     """
-    if global_ep_reward == 0:
-        global_ep_reward = episode_reward
-    else:
-        global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
+    global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
     print(
         f"Episode: {episode} | "
         f"Moving Average Reward: {global_ep_reward} | "
@@ -53,6 +52,9 @@ class Memory:
         self.states = []
         self.actions = []
         self.rewards = []
+        self.obs = []
+        self.probs = []
+        self.values = []
 
     def store(self, state, action, reward):
         self.states.append(state)
@@ -63,6 +65,9 @@ class Memory:
         self.states = []
         self.actions = []
         self.rewards = []
+        self.obs=[]
+        self.probs = []
+        self.values = []
 
 class ProbabilityDistribution(keras.Model):
     def call(self, logits):
@@ -127,17 +132,22 @@ class MasterAgent():
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.01,
+                 boredom_thresh=10,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
+                 visual_period=None,
+                 visual_path="/tmp/a3c/visuals",
                  save_path="/tmp/a3c"):
 
+        self.visual_path = visual_path
         self.save_path = save_path
         self.summary_writer = summary_writer
         self.log_period = log_period
         self.checkpoint_period = checkpoint_period
+        self.visual_period = visual_period
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
@@ -151,6 +161,7 @@ class MasterAgent():
         self.gamma = gamma
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
+        self.boredom_thresh = boredom_thresh
 
         self.opt = keras.optimizers.Adam(learning_rate)
         self.env_func = env_func
@@ -173,6 +184,7 @@ class MasterAgent():
                    gamma=self.gamma,
                    entropy_discount=self.entropy_discount,
                    value_discount=self.value_discount,
+                   boredom_thresh=self.boredom_thresh,
                    global_model=self.global_model,
                    opt=self.opt,
                    result_queue=res_queue,
@@ -181,6 +193,8 @@ class MasterAgent():
                    summary_writer=self.summary_writer,
                    log_period=self.log_period,
                    checkpoint_period=self.checkpoint_period,
+                   visual_period=self.visual_period,
+                   visual_path=self.visual_path,
                    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
                    #save_path=self.save_path) for i in range(1)]
 
@@ -206,54 +220,37 @@ class MasterAgent():
         memory_list = pickle.load(data_file)
         data_file.close()
 
+        all_actions = [frame for memory in memory_list for frame in memory.actions]
+        all_states = [frame for memory in memory_list for frame in memory.states]
+
+        counts = [(len(all_actions) - c) / len(all_actions) for c in list(Counter(all_actions).values())]
+        all_weights = [counts[action] for action in all_actions]
+
         for train_step in range(train_steps):
-            episode_loss = []
-            for memory in memory_list:
-                # Catch for human accidently skipping twice and making an empty episode
-                if len(memory.states) == 0: continue
-                with tf.GradientTape() as tape:
-                    total_loss = self.compute_loss(memory, self.gamma)
-            
-                # Calculate and apply policy gradients
-                total_grads = tape.gradient(total_loss, self.global_model.trainable_weights)
-                self.opt.apply_gradients(zip(total_grads,
-                                             self.global_model.trainable_weights))
-                episode_loss.append(tf.reduce_sum(total_loss))
-            print("Step {} | Loss: {}".format(train_step, sum(episode_loss) / len(episode_loss)))
+            with tf.GradientTape() as tape:
+                total_loss = self.compute_loss(all_actions, all_states, all_weights, self.gamma)
+        
+            # Calculate and apply policy gradients
+            total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
+            self.opt.apply_gradients(zip(total_grads,
+                                         self.global_model.actor_model.trainable_weights))
+            print("Step {} | Loss: {}".format(train_step, total_loss))
             
     def compute_loss(self,
-                     memory,
+                     all_actions,
+                     all_states,
+                     all_weights,
                      gamma):
-        # Get discounted rewards
-        reward_sum = 0.
-        discounted_rewards = []
-        for reward in memory.rewards[::-1]:  # reverse buffer r
-            reward_sum = reward + gamma * reward_sum
-            discounted_rewards.append(reward_sum)
-        discounted_rewards.reverse()
 
         # Get logits and values
         logits, values = self.global_model(
-                                tf.convert_to_tensor(np.vstack(memory.states),
+                                tf.convert_to_tensor(np.vstack(all_states),
                                 dtype=tf.float32))
 
-        # Get our advantages
-        advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
-
-        # Calculate our policy loss
-        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(logits),
-                                                             tf.nn.softmax(logits),
-                                                             from_logits=True)
         weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions)[:, None],
-                                                   logits)
-                                                   #sample_weight=tf.stop_gradient(advantage))
-        #policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
+        policy_loss = weighted_sparse_crossentropy(np.array(all_actions)[:, None], logits, sample_weight=all_weights)
 
-        # Calculate our value loss
-        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
-
-        return policy_loss + (value_loss * 0)#self.value_discount)
+        return policy_loss
 
     def play(self):
         env = gym.make('CartPole-v0').unwrapped
@@ -297,6 +294,7 @@ class Worker(threading.Thread):
                  gamma=0.99,
                  entropy_discount=0.01,
                  value_discount=0.5,
+                 boredom_thresh=0.5,
                  global_model=None,
                  opt=None,
                  result_queue=None,
@@ -305,6 +303,8 @@ class Worker(threading.Thread):
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
+                 visual_period=10,
+                 visual_path='/tmp/a3c/visuals/',
                  save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
         self.num_actions = num_actions
@@ -330,26 +330,34 @@ class Worker(threading.Thread):
         self.gamma = gamma
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
+        self.boredom_thresh = boredom_thresh
+
+        self.save_path = save_path
+        self.visual_path = visual_path
+        self.summary_writer = summary_writer
+        self.log_period = log_period
+        self.visual_period = visual_period
+        self.checkpoint_period = checkpoint_period
 
         self.result_queue = result_queue
-        self.save_path = save_path
-        self.log_period = log_period
-        self.checkpoint_period = checkpoint_period
-        self.summary_writer = summary_writer
-        self.worker_idx = idx
+
         self.ep_loss = 0.0
+        self.worker_idx = idx
         self.max_episodes = max_episodes
 
     def run(self):
         total_step = 1
         mem = Memory()
+
         while Worker.global_episode < self.max_episodes:
-            current_state = self.env.reset()
+            current_state, obs = self.env.reset()
+            rolling_average_state = current_state
             mem.clear()
             ep_reward = 0.
             ep_steps = 0
             self.ep_loss = 0
             current_episode = Worker.global_episode
+            save_visual = self.visual_path != None and current_episode % self.visual_period == 0
 
             time_count = 0
             done = False
@@ -357,17 +365,20 @@ class Worker(threading.Thread):
                 action, _ = self.local_model.get_action_value(
                                     tf.convert_to_tensor(current_state[None, :],
                                     dtype=tf.float32))
-                new_state, reward, done, _ = self.env.step(action)
+                new_state, reward, done, _, new_obs = self.env.step(action)
                 ep_reward += reward
                 mem.store(current_state, action, reward)
-
-                if done:
+                if save_visual:
+                    mem.obs.append(obs)
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, new_state))
+                               
+                if done or _deviation < self.boredom_thresh:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
 
                     # Update model
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, self.gamma)
+                        total_loss  = self.compute_loss(mem, self.gamma, save_visual)
                     self.ep_loss += tf.reduce_sum(total_loss)
 
                     # Calculate and apply policy gradients
@@ -378,6 +389,12 @@ class Worker(threading.Thread):
                     # Update local model with new weights
                     self.local_model.set_weights(self.global_model.get_weights())
 
+                    if save_visual:
+                        pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
+                        os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
+                        pickle_file = open(pickle_path, 'wb+')
+                        pickle.dump(mem, pickle_file)
+                        pickle_file.close()
                     mem.clear()
                     time_count = 0
 
@@ -408,16 +425,20 @@ class Worker(threading.Thread):
                         print("Checkpoint saved to {}".format(_save_path))
 
                     Worker.global_episode += 1
+                    break
                 else:
                     ep_steps += 1
                     time_count += 1
                     current_state = new_state
+                    rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
+                    obs = new_obs
                     total_step += 1
         self.result_queue.put(None)
 
     def compute_loss(self,
                      memory,
-                     gamma):
+                     gamma,
+                     save_visual):
 
         # Get discounted rewards
         reward_sum = 0.
@@ -431,6 +452,9 @@ class Worker(threading.Thread):
         logits, values = self.local_model(
                                 tf.convert_to_tensor(np.vstack(memory.states),
                                 dtype=tf.float32))
+        if save_visual:
+            memory.probs.extend(np.squeeze(tf.nn.softmax(logits).numpy()).tolist())
+            memory.values.extend(np.squeeze(values.numpy()).tolist())
 
         # Calculate our advantages
         advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
