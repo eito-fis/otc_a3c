@@ -128,7 +128,7 @@ saveCallBack = keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', per
 print("Start training...")
 encoder.fit(all_states,
             all_actions,
-            batch_size=1000,
+            batch_size=200,
             epochs=1000,
             callbacks=[tbCallBack, saveCallBack])
 print("Done!")
