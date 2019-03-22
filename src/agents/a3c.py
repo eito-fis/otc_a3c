@@ -36,14 +36,7 @@ def record(episode,
     num_steps: The number of steps the episode took to complete
     """
     global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print(
-        f"Episode: {episode} | "
-        f"Moving Average Reward: {global_ep_reward} | "
-        f"Episode Reward: {int(episode_reward)} | "
-        f"Loss: {int(total_loss / float(num_steps) * 1000) / 1000} | "
-        f"Steps: {num_steps} | "
-        f"Worker: {worker_idx}"
-    )
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(epiosde, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -131,8 +124,8 @@ class MasterAgent():
                  learning_rate=0.0001,
                  gamma=0.99,
                  entropy_discount=0.05,
-                 value_discount=0.01,
-                 boredom_thresh=10,
+                 value_discount=0.1,
+                 boredom_thresh=6,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -219,22 +212,28 @@ class MasterAgent():
         data_file = open(data_path, 'rb')
         memory_list = pickle.load(data_file)
         data_file.close()
+        print("Loaded files")
 
         all_actions = [frame for memory in memory_list for frame in memory.actions]
-        all_states = [frame for memory in memory_list for frame in memory.states]
+        all_states = [frame.numpy() for memory in memory_list for frame in memory.states]
 
         counts = [(len(all_actions) - c) / len(all_actions) for c in list(Counter(all_actions).values())]
         all_weights = [counts[action] for action in all_actions]
+        print("Counts: {}".format(Counter(all_actions)))
 
+        print("Starting steps...")
         for train_step in range(train_steps):
             with tf.GradientTape() as tape:
-                total_loss = self.compute_loss(all_actions, all_states, all_weights, self.gamma)
+                total_loss = self.compute_loss(all_actions,
+                                               all_states,
+                                               all_weights,
+                                               self.gamma)
         
             # Calculate and apply policy gradients
             total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
             self.opt.apply_gradients(zip(total_grads,
-                                         self.global_model.actor_model.trainable_weights))
-            print("Step {} | Loss: {}".format(train_step, total_loss))
+                                             self.global_model.actor_model.trainable_weights))
+            print("Step: {} | Loss: {}".format(train_step, total_loss))
             
     def compute_loss(self,
                      all_actions,
@@ -293,7 +292,7 @@ class Worker(threading.Thread):
                  critic_fc=None,
                  gamma=0.99,
                  entropy_discount=0.01,
-                 value_discount=0.5,
+                 value_discount=0.2,
                  boredom_thresh=0.5,
                  global_model=None,
                  opt=None,

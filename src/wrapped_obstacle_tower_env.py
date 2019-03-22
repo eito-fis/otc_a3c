@@ -4,10 +4,6 @@ import numpy as np
 from obstacle_tower_env import ObstacleTowerEnv
 from obstacle_tower_env import ActionFlattener
 
-from tf_agents.environments import py_environment
-from tf_agents.environments import time_step
-from tf_agents.specs import array_spec
-
 import tensorflow as tf
 import tensorflow_hub as hub
 
@@ -92,10 +88,10 @@ class WrappedObstacleTowerEnv():
             '''
         self._done = False
 
-    def action_spec(self) -> array_spec.BoundedArraySpec:
+    def action_spec(self):
         return self._action_spec
 
-    def observation_spec(self) -> array_spec.BoundedArraySpec:
+    def observation_spec(self):
         return self._observation_spec
 
     def process_observation(self, observation):
