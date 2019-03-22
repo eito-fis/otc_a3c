@@ -68,7 +68,6 @@ class EncoderModel(keras.Model):
                                             padding="SAME",
                                             activation="relu")
 
-        self.global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
         self.dense3 = keras.layers.Dense(3, activation="sigmoid")
         self.encoder = tf.keras.Sequential([self.conv1,
                                             self.conv2,
@@ -81,6 +80,7 @@ class EncoderModel(keras.Model):
                                             self.global_average_layer,
                                             self.dense3])
         '''
+        self.global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
         self.encoder = tf.keras.Sequential([self.mobilenet,
                                             self.global_average_layer,
                                             self.dense3])
