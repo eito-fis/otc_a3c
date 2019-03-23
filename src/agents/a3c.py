@@ -302,7 +302,7 @@ class Worker(threading.Thread):
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
-                 visual_period=10,
+                 visual_period=25,
                  visual_path='/tmp/a3c/visuals/',
                  save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
