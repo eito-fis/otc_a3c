@@ -126,7 +126,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=601,
+                 update_freq=5,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -392,7 +392,7 @@ class Worker(threading.Thread):
 
                     # Update model
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, self.gamma, save_visual)
+                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual)
                     self.ep_loss += tf.reduce_sum(total_loss)
 
                     # Calculate and apply policy gradients
@@ -406,6 +406,8 @@ class Worker(threading.Thread):
                     if done:
                         self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
                         Worker.global_episode += 1
+                    else:
+                        print("Gradient but not episode end")
                     mem.clear()
                     time_count = 0
                 else:
@@ -419,11 +421,19 @@ class Worker(threading.Thread):
 
     def compute_loss(self,
                      memory,
+                     done,
                      gamma,
                      save_visual):
+        # If not done, estimate the future discount reward of being in the final state
+        # using the critic model
+        if done:
+            reward_sum = 0.
+        else:
+            reward_sum = self.local_model.critic_model(
+                                            tf.convert_to_tensor(memory.states[-1])[None, :])
+            reward_sum = np.squeeze(reward_sum.numpy())
 
         # Get discounted rewards
-        reward_sum = 0.
         discounted_rewards = []
         for reward in memory.rewards[::-1]:  # reverse buffer r
             reward_sum = reward + gamma * reward_sum
@@ -465,6 +475,7 @@ class Worker(threading.Thread):
             pickle.dump(mem, pickle_file)
             pickle_file.close()
             print("Memory saved to {}".format(pickle_path))
+            
         # Metrics logging and saving
         Worker.global_moving_average_reward = \
         record(Worker.global_episode, ep_reward, self.worker_idx,
@@ -481,6 +492,7 @@ class Worker(threading.Thread):
                 )
                 Worker.best_score = ep_reward
 
+        # Save model and logs for tensorboard
         if current_episode % self.log_period == 0:
             with self.summary_writer.as_default():
                 tf.summary.scalar("Episode Reward", ep_reward, current_episode)

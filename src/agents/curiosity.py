@@ -453,9 +453,16 @@ class Worker(threading.Thread):
                      done,
                      gamma,
                      save_visual):
-
+        # If not done, estimate the future discount reward of being in the final state
+        # using the critic model
+        if done:
+            reward_sum = 0.
+        else:
+            reward_sum = self.local_model.critic_model(
+                                            tf.convert_to_tensor(memory.states[-1])[None, :])
+            reward_sum = np.squeeze(reward_sum.numpy())
+ 
         # Get discounted rewards
-        reward_sum = 0.
         discounted_rewards = []
         for reward in memory.rewards[::-1]:  # reverse buffer r
             reward_sum = reward + gamma * reward_sum
