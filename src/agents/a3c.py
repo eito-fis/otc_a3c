@@ -126,6 +126,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
+                 update_freq=601,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -156,6 +157,7 @@ class MasterAgent():
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
         self.boredom_thresh = boredom_thresh
+        self.update_freq = update_freq
 
         self.opt = keras.optimizers.Adam(learning_rate)
         self.env_func = env_func
@@ -182,6 +184,7 @@ class MasterAgent():
                    entropy_discount=self.entropy_discount,
                    value_discount=self.value_discount,
                    boredom_thresh=self.boredom_thresh,
+                   update_freq=self.update_freq,
                    global_model=self.global_model,
                    opt=self.opt,
                    result_queue=res_queue,
@@ -295,9 +298,10 @@ class Worker(threading.Thread):
                  actor_fc=None,
                  critic_fc=None,
                  gamma=0.99,
-                 entropy_discount=0.01,
-                 value_discount=0.2,
-                 boredom_thresh=0.5,
+                 entropy_discount=None,
+                 value_discount=None,
+                 boredom_thresh=None,
+                 update_freq=None,
                  global_model=None,
                  opt=None,
                  result_queue=None,
@@ -334,6 +338,7 @@ class Worker(threading.Thread):
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
         self.boredom_thresh = boredom_thresh
+        self.update_freq = update_freq
 
         self.save_path = save_path
         self.visual_path = visual_path
@@ -360,7 +365,7 @@ class Worker(threading.Thread):
             ep_steps = 0
             self.ep_loss = 0
             current_episode = Worker.global_episode
-            save_visual = self.visual_path != None and current_episode % self.visual_period == 0
+            save_visual = (self.visual_path != None and current_episode % self.visual_period == 0)
 
             action = 0
             time_count = 0
@@ -381,7 +386,7 @@ class Worker(threading.Thread):
                     mem.obs.append(obs)
                 # _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, new_state))
                 
-                if done:
+                if time_step == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
 
@@ -399,11 +404,10 @@ class Worker(threading.Thread):
                     self.local_model.set_weights(self.global_model.get_weights())
 
                     if done:
-                        self.log_data(save_visual, current_episode, ep_steps, ep_reward)
-                        mem.clear()
-                        time_count = 0
+                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
                         Worker.global_episode += 1
-                        break
+                    mem.clear()
+                    time_count = 0
                 else:
                     ep_steps += 1
                     time_count += 1
@@ -452,7 +456,7 @@ class Worker(threading.Thread):
 
         return policy_loss + (value_loss * self.value_discount)
 
-    def log_data(save_visual, current_episode, ep_steps, ep_reward):
+    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
         # Save the memory of our episode
         if save_visual:
             pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
@@ -460,6 +464,7 @@ class Worker(threading.Thread):
             pickle_file = open(pickle_path, 'wb+')
             pickle.dump(mem, pickle_file)
             pickle_file.close()
+            print("Memory saved to {}".format(pickle_path))
         # Metrics logging and saving
         Worker.global_moving_average_reward = \
         record(Worker.global_episode, ep_reward, self.worker_idx,
