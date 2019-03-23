@@ -386,7 +386,7 @@ class Worker(threading.Thread):
                     mem.obs.append(obs)
                 # _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, new_state))
                 
-                if time_step == self.update_freq or done:
+                if time_count == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
 
