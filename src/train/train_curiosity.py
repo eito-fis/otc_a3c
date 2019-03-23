@@ -31,10 +31,10 @@ def main(args,
          num_episodes=1000,
          log_period=5,
          save_period=5,
-         visual_period=1,
+         visual_period=25,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
-         curiosity_fc=(128, 64, 3),
+         curiosity_fc=(1024, 512, 3),
          num_actions=3,
          state_size=[1280],
          conv_size=None,
@@ -61,6 +61,7 @@ def main(args,
                                curiosity_fc=curiosity_fc,
                                summary_writer=summary_writer,
                                save_path=save_dir,
+                               load_path=args.restore,
                                visual_path=args.visual_dir,
                                visual_period=visual_period)
 
@@ -91,6 +92,10 @@ if __name__ == '__main__':
         default=None)
     parser.add_argument(
         '--visual-dir',
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--restore',
         type=str,
         default=None)
     parser.add_argument(

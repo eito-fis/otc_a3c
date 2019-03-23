@@ -126,6 +126,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
+                 update_freq=601,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -133,7 +134,8 @@ class MasterAgent():
                  checkpoint_period=10,
                  visual_period=None,
                  visual_path="/tmp/a3c/visuals",
-                 save_path="/tmp/a3c"):
+                 save_path="/tmp/a3c",
+                 load_path=None):
 
         self.visual_path = visual_path
         self.save_path = save_path
@@ -155,6 +157,7 @@ class MasterAgent():
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
         self.boredom_thresh = boredom_thresh
+        self.update_freq = update_freq
 
         self.opt = keras.optimizers.Adam(learning_rate)
         self.env_func = env_func
@@ -164,6 +167,9 @@ class MasterAgent():
                                              conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
                                              critic_fc=self.critic_fc)
+        if load_path != None:
+            self.global_model.load_weights(load_path)
+            print("Loaded model from {}".format(load_path))
 
     def distributed_train(self):
         res_queue = Queue()
@@ -178,6 +184,7 @@ class MasterAgent():
                    entropy_discount=self.entropy_discount,
                    value_discount=self.value_discount,
                    boredom_thresh=self.boredom_thresh,
+                   update_freq=self.update_freq,
                    global_model=self.global_model,
                    opt=self.opt,
                    result_queue=res_queue,
@@ -291,9 +298,10 @@ class Worker(threading.Thread):
                  actor_fc=None,
                  critic_fc=None,
                  gamma=0.99,
-                 entropy_discount=0.01,
-                 value_discount=0.2,
-                 boredom_thresh=0.5,
+                 entropy_discount=None,
+                 value_discount=None,
+                 boredom_thresh=None,
+                 update_freq=None,
                  global_model=None,
                  opt=None,
                  result_queue=None,
@@ -302,7 +310,7 @@ class Worker(threading.Thread):
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
-                 visual_period=10,
+                 visual_period=25,
                  visual_path='/tmp/a3c/visuals/',
                  save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
@@ -330,6 +338,7 @@ class Worker(threading.Thread):
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
         self.boredom_thresh = boredom_thresh
+        self.update_freq = update_freq
 
         self.save_path = save_path
         self.visual_path = visual_path
@@ -356,7 +365,7 @@ class Worker(threading.Thread):
             ep_steps = 0
             self.ep_loss = 0
             current_episode = Worker.global_episode
-            save_visual = self.visual_path != None and current_episode % self.visual_period == 0
+            save_visual = (self.visual_path != None and current_episode % self.visual_period == 0)
 
             action = 0
             time_count = 0
@@ -377,7 +386,7 @@ class Worker(threading.Thread):
                     mem.obs.append(obs)
                 # _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, new_state))
                 
-                if done:
+                if time_count == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
 
@@ -394,43 +403,11 @@ class Worker(threading.Thread):
                     # Update local model with new weights
                     self.local_model.set_weights(self.global_model.get_weights())
 
-                    if save_visual:
-                        pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
-                        os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
-                        pickle_file = open(pickle_path, 'wb+')
-                        pickle.dump(mem, pickle_file)
-                        pickle_file.close()
+                    if done:
+                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
+                        Worker.global_episode += 1
                     mem.clear()
                     time_count = 0
-
-                    # Metrics logging and saving
-                    Worker.global_moving_average_reward = \
-                    record(Worker.global_episode, ep_reward, self.worker_idx,
-                         Worker.global_moving_average_reward, self.result_queue,
-                         self.ep_loss, ep_steps)
-
-                    # We must use a lock to save our model and to print to prevent data races.
-                    if ep_reward > Worker.best_score:
-                        with Worker.save_lock:
-                            print("Saving best model to {}, "
-                                "episode score: {}".format(self.save_path, ep_reward))
-                            self.global_model.save_weights(
-                                os.path.join(self.save_path, 'model.h5')
-                            )
-                            Worker.best_score = ep_reward
-
-                    if current_episode % self.log_period == 0:
-                        with self.summary_writer.as_default():
-                            tf.summary.scalar("Episode Reward", ep_reward, current_episode)
-                            tf.summary.scalar("Episode Loss", tf.reduce_sum(total_loss), current_episode)
-                            tf.summary.scalar("Moving Global Average", Worker.global_moving_average_reward, current_episode)
-                    if current_episode % self.checkpoint_period == 0:
-                        _save_path = os.path.join(self.save_path, "worker_{}_model_{}".format(self.worker_idx, current_episode))
-                        self.local_model.save_weights(_save_path)
-                        print("Checkpoint saved to {}".format(_save_path))
-
-                    Worker.global_episode += 1
-                    break
                 else:
                     ep_steps += 1
                     time_count += 1
@@ -478,3 +455,39 @@ class Worker(threading.Thread):
         value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
 
         return policy_loss + (value_loss * self.value_discount)
+
+    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
+        # Save the memory of our episode
+        if save_visual:
+            pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
+            os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
+            pickle_file = open(pickle_path, 'wb+')
+            pickle.dump(mem, pickle_file)
+            pickle_file.close()
+            print("Memory saved to {}".format(pickle_path))
+        # Metrics logging and saving
+        Worker.global_moving_average_reward = \
+        record(Worker.global_episode, ep_reward, self.worker_idx,
+             Worker.global_moving_average_reward, self.result_queue,
+             self.ep_loss, ep_steps)
+
+        # We must use a lock to save our model and to print to prevent data races.
+        if ep_reward > Worker.best_score:
+            with Worker.save_lock:
+                print("Saving best model to {}, "
+                    "episode score: {}".format(self.save_path, ep_reward))
+                self.global_model.save_weights(
+                    os.path.join(self.save_path, 'model.h5')
+                )
+                Worker.best_score = ep_reward
+
+        if current_episode % self.log_period == 0:
+            with self.summary_writer.as_default():
+                tf.summary.scalar("Episode Reward", ep_reward, current_episode)
+                tf.summary.scalar("Episode Loss", tf.reduce_sum(total_loss), current_episode)
+                tf.summary.scalar("Moving Global Average", Worker.global_moving_average_reward, current_episode)
+        if current_episode % self.checkpoint_period == 0:
+            _save_path = os.path.join(self.save_path, "worker_{}_model_{}.h5".format(self.worker_idx, current_episode))
+            self.local_model.save_weights(_save_path)
+            print("Checkpoint saved to {}".format(_save_path))
+
