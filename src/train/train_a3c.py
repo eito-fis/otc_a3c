@@ -60,7 +60,8 @@ def main(args,
                                summary_writer=summary_writer,
                                save_path=save_dir,
                                visual_path=args.visual_dir,
-                               visual_period=visual_period)
+                               visual_period=visual_period,
+                               load_path=args.restore)
 
     
     if args.human_input != None:
@@ -89,6 +90,10 @@ if __name__ == '__main__':
         default=None)
     parser.add_argument(
         '--visual-dir',
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--restore',
         type=str,
         default=None)
     parser.add_argument(
