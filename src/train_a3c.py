@@ -27,13 +27,13 @@ import tensorflow as tf
 from tensorflow import keras
 
 def main(args,
-         initial_train_steps=500,
+         initial_train_steps=2500,
          num_episodes=1000,
          log_period=5,
          save_period=5,
          visual_period=1,
-         actor_fc=(512, 256),
-         critic_fc=(512, 256),
+         actor_fc=(1024, 512),
+         critic_fc=(1024, 512),
          num_actions=3,
          state_size=[1280],
          conv_size=None,

@@ -20,9 +20,9 @@ def input_action():
         else:
             print("Invalid input.")
 
-def run(env):
+def run(env, save_obs):
     mem = Memory()
-    current_state, _ = env.reset()
+    current_state, observation = env.reset()
     mem.clear()
 
     done = False
@@ -30,8 +30,12 @@ def run(env):
         action = input_action()
         if action == 4:
             break
-        new_state, reward, done, _, _ = env.step(action)
+        (new_state, reward, done, _), new_observation = env.step(action)
         mem.store(current_state, action, reward)
+        if save_obs:
+            mem.obs.append(observation)
+        current_state = new_state
+        observation = new_observation
 
     return mem
 
@@ -68,6 +72,7 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=50)
     parser.add_argument('--period', type=int, default=50)
     parser.add_argument('--augment', default=False, action='store_true')
+    parser.add_argument('--save-obs', default=False, action='store_true')
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
@@ -109,7 +114,7 @@ if __name__ == '__main__':
         os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
         print("Time to play!")
         for episode in range(1,episodes+1):
-            mem = run(env)
+            mem = run(env, args.save_obs)
             memory_buffer.append(mem)
             if episode % period == 0:
                 output_file = open(output_filepath, 'wb+')

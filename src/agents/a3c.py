@@ -35,7 +35,7 @@ def record(episode,
     num_steps: The number of steps the episode took to complete
     """
     global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(epiosde, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -83,7 +83,7 @@ class ActorCriticModel(keras.Model):
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
 
         self.actor_logits = keras.layers.Dense(num_actions, name='policy_logits')
-        self.value = keras.layers.Dense(1, name='value')
+        self.value = keras.layers.Dense(1, name='value', activation='relu')
 
         #self.conv_model = tf.keras.Sequential(self.conv_layers)
         #self.conv_model.build([None] + state_size)
@@ -120,11 +120,11 @@ class MasterAgent():
                  num_actions=2,
                  state_size=[4],
                  conv_size=None,
-                 learning_rate=0.0001,
+                 learning_rate=0.0000042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
-                 boredom_thresh=6,
+                 boredom_thresh=10,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -357,20 +357,26 @@ class Worker(threading.Thread):
             current_episode = Worker.global_episode
             save_visual = self.visual_path != None and current_episode % self.visual_period == 0
 
+            action = 0
             time_count = 0
             done = False
             while not done:
-                action, _ = self.local_model.get_action_value(
-                                    tf.convert_to_tensor(current_state[None, :],
-                                    dtype=tf.float32))
-                new_state, reward, done, _, new_obs = self.env.step(action)
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
+                if time_count > 10 and _deviation < self.boredom_thresh:
+                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    action = np.random.choice(possible_actions)
+                else:
+                    action, _ = self.local_model.get_action_value(
+                                        tf.convert_to_tensor(current_state[None, :],
+                                        dtype=tf.float32))
+                (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
                 mem.store(current_state, action, reward)
                 if save_visual:
                     mem.obs.append(obs)
-                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, new_state))
-                               
-                if done or _deviation < self.boredom_thresh:
+                # _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, new_state))
+                
+                if done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
 
