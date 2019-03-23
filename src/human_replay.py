@@ -108,7 +108,7 @@ if __name__ == '__main__':
     else:
         #BUILD ENVIRONMENT#
         print("Building environment...")
-        env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True)
+        env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True, floor=args.floor)
         print("Environment built.")
 
         #INSTANTIATE MEMORY BUFFER#
