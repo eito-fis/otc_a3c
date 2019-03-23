@@ -39,7 +39,8 @@ class WrappedObstacleTowerEnv():
         timeout_wait=30,
         realtime_mode=False,
         num_actions=3,
-        mobilenet=False
+        mobilenet=False,
+        floor=0
         ):
         '''
         Arguments:
@@ -54,6 +55,7 @@ class WrappedObstacleTowerEnv():
         '''
 
         self._obstacle_tower_env = ObstacleTowerEnv(environment_filename, docker_training, worker_id, retro, timeout_wait, realtime_mode)
+        self._obstacle_tower_env.floor(floor)
         self._flattener = ActionFlattener([3,3,2,3])
         self._action_space = self._flattener.action_space
         self.mobilenet = mobilenet

@@ -73,6 +73,7 @@ if __name__ == '__main__':
     parser.add_argument('--period', type=int, default=50)
     parser.add_argument('--augment', default=False, action='store_true')
     parser.add_argument('--save-obs', default=False, action='store_true')
+    parser.add_argument('--floor', type=int, default=0)
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
