@@ -2,6 +2,7 @@
 import os
 import pickle
 import argparse
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import threading
 import multiprocessing
@@ -35,7 +36,7 @@ def record(episode,
     num_steps: The number of steps the episode took to complete
     """
     global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(epiosde, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -60,6 +61,7 @@ class Memory:
         self.rewards = []
         self.obs=[]
         self.probs = []
+        self.values = []
         self.novelty = []
 
 class ProbabilityDistribution(keras.Model):
@@ -73,40 +75,53 @@ class ActorCriticModel(keras.Model):
                  state_size=None,
                  conv_size=None,
                  actor_fc=None,
-                 critic_fc=None):
+                 critic_fc=None,
+                 curiosity_fc=None):
         super().__init__()
-    
-        #self.conv_layers = [hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
-        #                                   output_shape=conv_size,
-        #                                   trainable=False)]
         
+        # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
+        self.curiosity_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in curiosity_fc]
+        self.target_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in curiosity_fc]
 
+        # Build endpoints for our models
         self.actor_logits = keras.layers.Dense(num_actions, name='policy_logits')
-        self.value = keras.layers.Dense(1, name='value')
+        self.value = keras.layers.Dense(1, name='value', activation='relu')
 
-        #self.conv_model = tf.keras.Sequential(self.conv_layers)
-        #self.conv_model.build([None] + state_size)
-
+        # Build A2C models
         self.actor_model = tf.keras.Sequential(self.actor_fc + [self.actor_logits])
         self.actor_model.build([None] + state_size)
         self.critic_model = tf.keras.Sequential(self.critic_fc + [self.value])
         self.critic_model.build([None] + state_size)
-        #self.critic_model.build((None, self.conv_model.layers[-1].output_shape))
 
+        # Build Cuiriosity model
+        self.curiosity_model = tf.keras.Sequential(self.curiosity_fc)
+        self.curiosity_model.build([None] + state_size)
+        self.target_model = tf.keras.Sequential(self.target_fc)
+        self.target_model.build([None] + state_size)
+        self.target_model.trainable = False
+
+        # Build sample chooser TODO: Replace with tf.distribution
         self.dist = ProbabilityDistribution()
+
+        # Run the entire pipeline to build the graph before async workers start
         self.get_action_value(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
+        self.curiosity_model(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
+        self.target_model(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
 
     def call(self, inputs):
-        #inputs = self.conv_model(inputs)
+        # Call our models on the input and return
         actor_logits = self.actor_model(inputs)
         value = self.critic_model(inputs)
+        prediction = self.curiosity_model(inputs)
+        target = self.target_model(inputs)
 
-        return actor_logits, value
+        return actor_logits, value, prediction, target
 
     def get_action_value(self, obs):
-        logits, value = self.predict(obs)
+        logits = self.actor_model(obs)
+        value = self.critic_model(obs)
 
         action = self.dist.predict(logits)
         action = action[0]
@@ -125,9 +140,12 @@ class MasterAgent():
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
+                 novelty_discount=0.1,
+                 intrinsic_reward_discount=0.0001,
                  boredom_thresh=6,
                  actor_fc=None,
                  critic_fc=None,
+                 curiosity_fc=None,
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
@@ -150,10 +168,13 @@ class MasterAgent():
         self.conv_size = conv_size
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
+        self.curiosity_fc = curiosity_fc
 
         self.gamma = gamma
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
+        self.novelty_discount = novelty_discount
+        self.intrinsic_reward_discount = intrinsic_reward_discount
         self.boredom_thresh = boredom_thresh
 
         self.opt = keras.optimizers.Adam(learning_rate)
@@ -163,7 +184,8 @@ class MasterAgent():
                                              state_size=self.state_size,
                                              conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
-                                             critic_fc=self.critic_fc)
+                                             critic_fc=self.critic_fc,
+                                             curiosity_fc=self.curiosity_fc)
 
     def distributed_train(self):
         res_queue = Queue()
@@ -174,9 +196,12 @@ class MasterAgent():
                    conv_size=self.conv_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
+                   curiosity_fc=self.curiosity_fc,
                    gamma=self.gamma,
                    entropy_discount=self.entropy_discount,
                    value_discount=self.value_discount,
+                   novelty_discount=self.novelty_discount,
+                   intrinsic_reward_discount=self.intrinsic_reward_discount,
                    boredom_thresh=self.boredom_thresh,
                    global_model=self.global_model,
                    opt=self.opt,
@@ -188,8 +213,8 @@ class MasterAgent():
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
                    visual_path=self.visual_path,
-                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                   #save_path=self.save_path) for i in range(1)]
+                   save_path=self.save_path) for i in range(1)]
+                   #save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -242,9 +267,9 @@ class MasterAgent():
                      gamma):
 
         # Get logits and values
-        logits, values = self.global_model(
-                                tf.convert_to_tensor(np.vstack(all_states),
-                                dtype=tf.float32))
+        logits, values, predict, train = self.global_model(
+                                            tf.convert_to_tensor(np.vstack(all_states),
+                                            dtype=tf.float32))
 
         weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         policy_loss = weighted_sparse_crossentropy(np.array(all_actions)[:, None], logits, sample_weight=all_weights)
@@ -290,10 +315,13 @@ class Worker(threading.Thread):
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
-                 gamma=0.99,
-                 entropy_discount=0.01,
-                 value_discount=0.2,
-                 boredom_thresh=0.5,
+                 curiosity_fc=None,
+                 gamma=None,
+                 entropy_discount=None,
+                 value_discount=None,
+                 novelty_discount=None,
+                 intrinsic_reward_discount=None,
+                 boredom_thresh=None,
                  global_model=None,
                  opt=None,
                  result_queue=None,
@@ -303,7 +331,7 @@ class Worker(threading.Thread):
                  log_period=10,
                  checkpoint_period=10,
                  visual_period=10,
-                 visual_path='/tmp/a3c/visuals/',
+                 visual_path='/tmp/a3c/visuals',
                  save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
         self.num_actions = num_actions
@@ -316,7 +344,8 @@ class Worker(threading.Thread):
                                             state_size=self.state_size,
                                             conv_size=self.conv_size,
                                             actor_fc=actor_fc,
-                                            critic_fc=critic_fc)
+                                            critic_fc=critic_fc,
+                                            curiosity_fc=curiosity_fc)
         self.local_model.set_weights(self.global_model.get_weights())
 
         if env_func == None:
@@ -329,6 +358,8 @@ class Worker(threading.Thread):
         self.gamma = gamma
         self.entropy_discount = entropy_discount
         self.value_discount = value_discount
+        self.novelty_discount = novelty_discount
+        self.intrinsic_reward_discount = intrinsic_reward_discount
         self.boredom_thresh = boredom_thresh
 
         self.save_path = save_path
@@ -364,7 +395,7 @@ class Worker(threading.Thread):
                 action, _ = self.local_model.get_action_value(
                                     tf.convert_to_tensor(current_state[None, :],
                                     dtype=tf.float32))
-                new_state, reward, done, _, new_obs = self.env.step(action)
+                (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
                 mem.store(current_state, action, reward)
                 if save_visual:
@@ -381,9 +412,12 @@ class Worker(threading.Thread):
                     self.ep_loss += tf.reduce_sum(total_loss)
 
                     # Calculate and apply policy gradients
-                    total_grads = tape.gradient(total_loss, self.local_model.trainable_weights)
-                    self.opt.apply_gradients(zip(total_grads,
-                                           self.global_model.trainable_weights))
+                    total_grads = tape.gradient(total_loss, self.local_model.actor_model.trainable_weights +
+                                                            self.local_model.critic_model.trainable_weights + 
+                                                            self.local_model.curiosity_model.trainable_weights)
+                    self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights,
+                                                              self.global_model.critic_model.trainable_weights,
+                                                              self.global_model.curiosity_model.trainable_weights))
 
                     # Update local model with new weights
                     self.local_model.set_weights(self.global_model.get_weights())
@@ -447,28 +481,39 @@ class Worker(threading.Thread):
             discounted_rewards.append(reward_sum)
         discounted_rewards.reverse()
 
-        # Get logits and values
-        logits, values = self.local_model(
+        # Get logits, values, predictions and targets
+        logits, values, predictions, targets = self.local_model(
                                 tf.convert_to_tensor(np.vstack(memory.states),
                                 dtype=tf.float32))
-        if save_visual:
-            memory.probs.extend(np.squeeze(tf.nn.softmax(logits).numpy()).tolist())
-            memory.values.extend(np.squeeze(values.numpy()).tolist())
+
+        # Calculate our novelty
+        novelty = keras.losses.mean_squared_error(predictions, tf.stop_gradient(targets))
+        print(novelty)
 
         # Calculate our advantages
         advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
 
-        # Calculate our policy loss
-        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(logits),
-                                                             tf.nn.softmax(logits),
+        # Calculate our total reward
+        total_reward = advantage + (novelty[:, None] * self.intrinsic_reward_discount)
+
+        # Calculate our entropy loss
+        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(tf.nn.softmax(logits)),
+                                                             logits,
                                                              from_logits=True)
+
+        # Calculate our policy loss
         weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         policy_loss = weighted_sparse_crossentropy(np.array(memory.actions)[:, None],
                                                    logits,
-                                                   sample_weight=tf.stop_gradient(advantage))
-        policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
+                                                   sample_weight=tf.stop_gradient(total_reward))
+        policy_loss = policy_loss - (entropy_loss * self.entropy_discount)
 
         # Calculate our value loss
         value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
 
-        return policy_loss + (value_loss * self.value_discount)
+        if save_visual:
+            memory.probs.extend(np.squeeze(tf.nn.softmax(logits).numpy()).tolist())
+            memory.values.extend(np.squeeze(values.numpy()).tolist())
+            memory.novelty.extend(np.squeeze(novelty.numpy()).tolist())
+
+        return policy_loss + (value_loss * self.value_discount) + (novelty * self.novelty_discount)
