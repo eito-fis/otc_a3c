@@ -298,27 +298,51 @@ class MasterAgent():
         return policy_loss
 
     def play(self):
-        env = gym.make('CartPole-v0').unwrapped
-        state = env.reset()
-        model = self.global_model
-        model_path = os.path.join(self.save_path, 'model.h5')
-        print('Loading model from: {}'.format(model_path))
-        model.load_weights(model_path)
+        env = self.env_func(idx=0)
+        state, observation = env.reset()
         done = False
         step_counter = 0
         reward_sum = 0
+        rolling_average_state = np.zeros(state.shape) + (0.2 * state)
+        if self.memory_path:
+            memory = Memory()
 
         try:
             while not done:
-                env.render(mode='rgb_array')
-                action, value = model.get_action_value(tf.convert_to_tensor(state[None, :], dtype=tf.float32))
-                state, reward, done, _ = env.step(action)
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
+                if step_counter > 10 and _deviation < self.boredom_thresh:
+                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    action = np.random.choice(possible_actions)
+                    distribution = np.zeros(self.num_actions)
+                    value = 100
+                else:
+                    stacked_state = [np.zeros_like(state) if step_counter - i < 0
+                                                          else memory.states[step_counter - i].numpy()
+                                                          for i in reversed(range(self.stack_size))]
+                    logits = self.global_model.actor_model(stacked_state[None, :])
+                    distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
+                    action = np.argmax(logits)
+                    value = self.global_model.critic_model(stacked_state[None, :])
+                (new_state, reward, done, _), new_observation = env.step(action)
+                memory.store(state, action, reward)
+                if self.memory_path:
+                    memory.obs.append(observation)
+                    memory.probs.append(distribution)
+                    memory.values.append(value)
+                state = new_state
+                observation = new_observation
                 reward_sum += reward
+                rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 print("{}. Reward: {}, action: {}".format(step_counter, reward_sum, action))
                 step_counter += 1
         except KeyboardInterrupt:
             print("Received Keyboard Interrupt. Shutting down.")
         finally:
+            if self.memory_path:
+                _mem_path = os.path.join(self.memory_path, "evaluation_memory")
+                os.makedirs(os.path.dirname(_mem_path), exist_ok=True)
+                output_file = open(_mem_path, 'wb+')
+                pickle.dump(memory, output_file)
             env.close()
 
 class Worker(threading.Thread):
