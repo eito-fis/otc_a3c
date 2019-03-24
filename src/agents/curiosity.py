@@ -153,11 +153,11 @@ class MasterAgent():
                  log_period=10,
                  checkpoint_period=10,
                  visual_period=None,
-                 visual_path="/tmp/a3c/visuals",
+                 memory_path="/tmp/a3c/visuals",
                  save_path="/tmp/a3c",
                  load_path=None):
 
-        self.visual_path = visual_path
+        self.memory_path = memory_path
         self.save_path = save_path
         self.summary_writer = summary_writer
         self.log_period = log_period
@@ -222,7 +222,7 @@ class MasterAgent():
                    log_period=self.log_period,
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
-                   visual_path=self.visual_path,
+                   memory_path=self.memory_path,
                    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
                    #save_path=self.save_path) for i in range(1)]
 
@@ -392,7 +392,7 @@ class Worker(threading.Thread):
                  log_period=10,
                  checkpoint_period=10,
                  visual_period=10,
-                 visual_path='/tmp/a3c/visuals',
+                 memory_path='/tmp/a3c/visuals',
                  save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
         self.num_actions = num_actions
@@ -427,7 +427,7 @@ class Worker(threading.Thread):
         self.update_freq = update_freq
 
         self.save_path = save_path
-        self.visual_path = visual_path
+        self.memory_path = memory_path
         self.summary_writer = summary_writer
         self.log_period = log_period
         self.visual_period = visual_period
@@ -451,7 +451,7 @@ class Worker(threading.Thread):
             ep_steps = 0
             self.ep_loss = 0
             current_episode = Worker.global_episode
-            save_visual = self.visual_path != None and current_episode % self.visual_period == 0
+            save_visual = self.memory_path != None and current_episode % self.visual_period == 0
 
             time_count = 0
             done = False
@@ -575,7 +575,7 @@ class Worker(threading.Thread):
     def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
         # Save the memory of our episode
         if save_visual:
-            pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
+            pickle_path = os.path.join(self.memory_path, "memory_{}_{}".format(current_episode, self.worker_idx))
             os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
             pickle_file = open(pickle_path, 'wb+')
             pickle.dump(mem, pickle_file)
