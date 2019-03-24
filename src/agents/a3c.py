@@ -121,23 +121,23 @@ class MasterAgent():
                  num_actions=2,
                  state_size=[4],
                  conv_size=None,
-                 learning_rate=0.0000042,
+                 learning_rate=0.00042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=5,
+                 update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
                  visual_period=None,
-                 visual_path="/tmp/a3c/visuals",
+                 memory_path="/tmp/a3c/visuals",
                  save_path="/tmp/a3c",
                  load_path=None):
 
-        self.visual_path = visual_path
+        self.memory_path = memory_path
         self.save_path = save_path
         self.summary_writer = summary_writer
         self.log_period = log_period
@@ -194,7 +194,7 @@ class MasterAgent():
                    log_period=self.log_period,
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
-                   visual_path=self.visual_path,
+                   memory_path=self.memory_path,
                    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
                    #save_path=self.save_path) for i in range(1)]
 
@@ -241,7 +241,16 @@ class MasterAgent():
             self.opt.apply_gradients(zip(total_grads,
                                              self.global_model.actor_model.trainable_weights))
             print("Step: {} | Loss: {}".format(train_step, total_loss))
-            
+
+        critic_batch_size = 100
+        critic_steps = 1000
+        self.initialize_critic_model(critic_batch_size, critic_steps)
+
+        _save_path = os.path.join(self.save_path, "human_trained_model.h5")
+        os.makedirs(os.path.dirname(_save_path), exist_ok=True)
+        self.global_model.save_weights(_save_path)
+        print("Checkpoint saved to {}".format(_save_path))
+    
     def compute_loss(self,
                      all_actions,
                      all_states,
@@ -255,32 +264,64 @@ class MasterAgent():
 
         weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         policy_loss = weighted_sparse_crossentropy(np.array(all_actions)[:, None], logits, sample_weight=all_weights)
-
         return policy_loss
 
+    def initialize_critic_model(self, batch_size, critic_steps):
+        random_states = np.random.random((batch_size,) + tuple(self.state_size))
+        zero_rewards = np.zeros(batch_size)
+        for critic_step in range(critic_steps):
+            with tf.GradientTape() as tape:
+                values = self.global_model.critic_model(random_states)
+                value_loss = keras.losses.mean_squared_error(zero_rewards[:, None], values)
+            value_grads = tape.gradient(value_loss, self.global_model.critic_model.trainable_weights)
+            
+            self.opt.apply_gradients(zip(value_grads, self.global_model.critic_model.trainable_weights))
+
     def play(self):
-        env = gym.make('CartPole-v0').unwrapped
-        state = env.reset()
-        model = self.global_model
-        model_path = os.path.join(self.save_path, 'model.h5')
-        print('Loading model from: {}'.format(model_path))
-        model.load_weights(model_path)
+        env = self.env_func(idx=0)
+        state, observation = env.reset()
         done = False
         step_counter = 0
         reward_sum = 0
+        rolling_average_state = np.zeros(state.shape) + (0.2 * state)
+        if self.memory_path:
+            memory = Memory()
 
         try:
             while not done:
-                env.render(mode='rgb_array')
-                action, value = model.get_action_value(tf.convert_to_tensor(state[None, :], dtype=tf.float32))
-                state, reward, done, _ = env.step(action)
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
+                if step_counter > 10 and _deviation < self.boredom_thresh:
+                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    action = np.random.choice(possible_actions)
+                    distribution = np.zeros(self.num_actions)
+                    value = 100
+                else:
+                    logits = self.global_model.actor_model(state[None, :])
+                    distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
+                    action = np.argmax(logits)
+                    value = self.global_model.critic_model(state[None, :])
+                (new_state, reward, done, _), new_observation = env.step(action)
+                if self.memory_path:
+                    memory.store(state, action, reward)
+                    memory.obs.append(observation)
+                    memory.probs.append(distribution)
+                    memory.values.append(value)
+                state = new_state
+                observation = new_observation
                 reward_sum += reward
+                rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 print("{}. Reward: {}, action: {}".format(step_counter, reward_sum, action))
                 step_counter += 1
         except KeyboardInterrupt:
             print("Received Keyboard Interrupt. Shutting down.")
         finally:
+            if self.memory_path:
+                _mem_path = os.path.join(self.memory_path, "evaluation_memory")
+                os.makedirs(os.path.dirname(_mem_path), exist_ok=True)
+                output_file = open(_mem_path, 'wb+')
+                pickle.dump(memory, output_file)
             env.close()
+
 
 class Worker(threading.Thread):
     # Set up global variables across different threads
@@ -311,7 +352,7 @@ class Worker(threading.Thread):
                  log_period=10,
                  checkpoint_period=10,
                  visual_period=25,
-                 visual_path='/tmp/a3c/visuals/',
+                 memory_path='/tmp/a3c/visuals/',
                  save_path='/tmp/a3c/workers'):
         super(Worker, self).__init__()
         self.num_actions = num_actions
@@ -341,7 +382,7 @@ class Worker(threading.Thread):
         self.update_freq = update_freq
 
         self.save_path = save_path
-        self.visual_path = visual_path
+        self.memory_path = memory_path
         self.summary_writer = summary_writer
         self.log_period = log_period
         self.visual_period = visual_period
@@ -365,7 +406,7 @@ class Worker(threading.Thread):
             ep_steps = 0
             self.ep_loss = 0
             current_episode = Worker.global_episode
-            save_visual = (self.visual_path != None and current_episode % self.visual_period == 0)
+            save_visual = (self.memory_path != None and current_episode % self.visual_period == 0)
 
             action = 0
             time_count = 0
@@ -406,8 +447,6 @@ class Worker(threading.Thread):
                     if done:
                         self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
                         Worker.global_episode += 1
-                    else:
-                        print("Gradient but not episode end")
                     mem.clear()
                     time_count = 0
                 else:
@@ -469,7 +508,7 @@ class Worker(threading.Thread):
     def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
         # Save the memory of our episode
         if save_visual:
-            pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
+            pickle_path = os.path.join(self.memory_path, "memory_{}_{}".format(current_episode, self.worker_idx))
             os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
             pickle_file = open(pickle_path, 'wb+')
             pickle.dump(mem, pickle_file)
