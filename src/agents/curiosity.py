@@ -73,11 +73,13 @@ class ActorCriticModel(keras.Model):
     def __init__(self,
                  num_actions=None,
                  state_size=None,
+                 stack_size=None,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
                  curiosity_fc=None):
         super().__init__()
+        state_size = state_size[:-1] + [state_size[-1] * stack_size]
         
         # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
@@ -95,7 +97,7 @@ class ActorCriticModel(keras.Model):
         self.critic_model = tf.keras.Sequential(self.critic_fc + [self.value])
         self.critic_model.build([None] + state_size)
 
-        # Build Cuiriosity model
+        # Build Cuiriosity models
         self.curiosity_model = tf.keras.Sequential(self.curiosity_fc)
         self.curiosity_model.build([None] + state_size)
         self.target_model = tf.keras.Sequential(self.target_fc)
@@ -105,9 +107,9 @@ class ActorCriticModel(keras.Model):
         self.dist = ProbabilityDistribution()
 
         # Run the entire pipeline to build the graph before async workers start
-        self.get_action_value(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
-        self.curiosity_model(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
-        self.target_model(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
+        self.get_action_value(np.random.random((1,) + tuple(state_size)))
+        self.curiosity_model(np.random.random((1,) + tuple(state_size)))
+        self.target_model(np.random.random((1,) + tuple(state_size)))
 
     def call(self, inputs):
         # Call our models on the input and return
@@ -134,15 +136,16 @@ class MasterAgent():
                  env_func=None,
                  num_actions=2,
                  state_size=[4],
+                 stack_size=4,
                  conv_size=None,
-                 learning_rate=0.0001,
+                 learning_rate=0.00001,
                  gamma=0.99,
-                 entropy_discount=0.05,
+                 entropy_discount=0.01,
                  value_discount=0.25,
                  novelty_discount=0.01,
-                 intrinsic_reward_discount=1,
+                 intrinsic_reward_discount=0.1,
                  boredom_thresh=0,
-                 update_freq=601,
+                 update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
                  curiosity_fc=None,
@@ -166,6 +169,7 @@ class MasterAgent():
         self.num_episodes = num_episodes
         self.num_actions = num_actions
         self.state_size = state_size
+        self.stack_size = stack_size
         self.conv_size = conv_size
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
@@ -183,6 +187,7 @@ class MasterAgent():
         self.env_func = env_func
         self.global_model = ActorCriticModel(num_actions=self.num_actions,
                                              state_size=self.state_size,
+                                             stack_size=self.stack_size,
                                              conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
                                              critic_fc=self.critic_fc,
@@ -196,6 +201,7 @@ class MasterAgent():
         workers = [Worker(idx=i,
                    num_actions=self.num_actions,
                    state_size=self.state_size,
+                   stack_size=self.stack_size,
                    conv_size=self.conv_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
@@ -236,26 +242,40 @@ class MasterAgent():
         self.play()
         return moving_average_rewards
 
-    def human_train(self, data_path, train_steps):
-        # Load human input from pickle file
+    def human_train(self, data_path, train_steps, batch_size):
+        # Load memories from pickle file
         data_file = open(data_path, 'rb')
         memory_list = pickle.load(data_file)
         data_file.close()
         print("Loaded files")
 
-        all_actions = [frame for memory in memory_list for frame in memory.actions]
-        all_states = [frame.numpy() for memory in memory_list for frame in memory.states]
-
-        counts = [(len(all_actions) - c) / len(all_actions) for c in list(Counter(all_actions).values())]
-        all_weights = [counts[action] for action in all_actions]
+        counts = [frame for memory in memory_list for frame in memory.actions]
+        counts = [(len(counts) - c) / len(counts) for c in list(Counter(counts).values())]
         print("Counts: {}".format(Counter(all_actions)))
 
+        def gen():
+            while True:
+                for memory in memory_list:
+                    for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
+                        if len(actions) == batch_size:
+                            weights = [counts[action] for action in actions]
+                            yield actions, states, weights
+                            actions = []
+                            states = [] 
+                        actions.append(action)
+                        stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
+                                      for i in reversed(range(self.stack_size))]
+                        stacked_state = np.concatenate(stacked_state)
+                        states.append(stacked_state)
+
         print("Starting steps...")
+        generator = gen()
         for train_step in range(train_steps):
+            actions, states, weights = next(generator)
             with tf.GradientTape() as tape:
-                total_loss = self.compute_loss(all_actions,
-                                               all_states,
-                                               all_weights,
+                total_loss = self.compute_loss(actions,
+                                               states,
+                                               weights,
                                                self.gamma)
         
             # Calculate and apply policy gradients
@@ -265,18 +285,15 @@ class MasterAgent():
             print("Step: {} | Loss: {}".format(train_step, total_loss))
             
     def compute_loss(self,
-                     all_actions,
-                     all_states,
-                     all_weights,
+                     actions,
+                     states,
+                     weights,
                      gamma):
-
         # Get logits and values
-        logits, values, predict, train = self.global_model(
-                                            tf.convert_to_tensor(np.vstack(all_states),
-                                            dtype=tf.float32))
+        logits, values, predict, train = self.global_model(states)
 
         weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        policy_loss = weighted_sparse_crossentropy(np.array(all_actions)[:, None], logits, sample_weight=all_weights)
+        policy_loss = weighted_sparse_crossentropy(np.array(actions)[:, None], logits, sample_weight=weights)
 
         return policy_loss
 
@@ -316,6 +333,7 @@ class Worker(threading.Thread):
                  idx=0,
                  num_actions=2,
                  state_size=[4],
+                 stack_size=None,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
@@ -331,7 +349,7 @@ class Worker(threading.Thread):
                  opt=None,
                  result_queue=None,
                  env_func=None,
-                 max_episodes=500,
+                 max_episodes=None,
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
@@ -341,12 +359,14 @@ class Worker(threading.Thread):
         super(Worker, self).__init__()
         self.num_actions = num_actions
         self.state_size = state_size
+        self.stack_size = stack_size
         self.conv_size = conv_size
 
         self.opt = opt
         self.global_model = global_model
         self.local_model = ActorCriticModel(num_actions=self.num_actions,
                                             state_size=self.state_size,
+                                            stack_size=self.stack_size,
                                             conv_size=self.conv_size,
                                             actor_fc=actor_fc,
                                             critic_fc=critic_fc,
@@ -403,9 +423,13 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    action, _ = self.local_model.get_action_value(
-                                        tf.convert_to_tensor(current_state[None, :],
-                                        dtype=tf.float32))
+                    stacked_state = [np.zeros_like(current_state) if time_count - i < 0
+                                                                  else mem.states[time_count - i].numpy()
+                                                                  for i in reversed(range(1, self.stack_size))]
+                    stacked_state.append(current_state)
+                    stacked_state = np.concatenate(stacked_state)
+                    action, _ = self.local_model.get_action_value(stacked_state[None, :])
+
                 (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
                 mem.store(current_state, action, reward)
@@ -458,8 +482,7 @@ class Worker(threading.Thread):
         if done:
             reward_sum = 0.
         else:
-            reward_sum = self.local_model.critic_model(
-                                            tf.convert_to_tensor(memory.states[-1])[None, :])
+            reward_sum = self.local_model.critic_model(np.concatenate(memory.states[-self.stack_size:])[None, :])
             reward_sum = np.squeeze(reward_sum.numpy())
  
         # Get discounted rewards
@@ -469,22 +492,25 @@ class Worker(threading.Thread):
             discounted_rewards.append(reward_sum)
         discounted_rewards.reverse()
 
+        stacked_states = []
+        for index, state in enumerate(memory.states):
+            stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
+                                      for i in reversed(range(self.stack_size))]
+            stacked_states.append(np.concatenate(stacked_state))
+
         # Get logits, values, predictions and targets
-        logits, values, predictions, targets = self.local_model(
-                                tf.convert_to_tensor(np.vstack(memory.states),
-                                dtype=tf.float32))
+        logits, values, predictions, targets = self.local_model(stacked_states)
 
         # Calculate our novelty
         novelty = keras.losses.mean_squared_error(predictions, tf.stop_gradient(targets))
         novelty = tf.math.divide_no_nan(novelty - tf.math.reduce_mean(novelty), tf.math.reduce_std(novelty))
-        print(novelty[:, None])
+        print(novelty)
 
         # Calculate our advantages
-        advantage = tf.convert_to_tensor(np.array(discounted_rewards)[:, None], dtype=tf.float32) - values
+        advantage = np.array(discounted_rewards)[:, None] - values
 
         # Calculate our total reward
-        #total_reward = advantage + (novelty[:, None] * self.intrinsic_reward_discount)
-        total_reward = novelty[:, None] * self.intrinsic_reward_discount
+        total_reward = advantage + (novelty[:, None] * self.intrinsic_reward_discount)
 
         # Calculate our entropy loss
         entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(tf.nn.softmax(logits)),
@@ -508,7 +534,7 @@ class Worker(threading.Thread):
 
         return policy_loss + (value_loss * self.value_discount) + (novelty * self.novelty_discount)
 
-    def log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
+    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
         # Save the memory of our episode
         if save_visual:
             pickle_path = os.path.join(self.visual_path, "memory_{}_{}".format(current_episode, self.worker_idx))
