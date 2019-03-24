@@ -40,6 +40,7 @@ class WrappedObstacleTowerEnv():
         realtime_mode=False,
         num_actions=3,
         mobilenet=False,
+        gray_scale=False,
         floor=0
         ):
         '''
@@ -59,35 +60,9 @@ class WrappedObstacleTowerEnv():
         self._flattener = ActionFlattener([3,3,2,3])
         self._action_space = self._flattener.action_space
         self.mobilenet = mobilenet
+        self.gray_scale = gray_scale
         if mobilenet:
             self.image_module = WrappedKerasLayer(retro, self.mobilenet)
-        '''
-        self._action_spec = array_spec.BoundedArraySpec(
-            shape=self._action_space.shape,
-            dtype=self._action_space.dtype,
-            minimum=0,
-            maximum=num_actions - 1,
-            name='action',
-        )
-        if mobilenet:
-            self.mobilenet = mobilenet
-            self._observation_spec = array_spec.BoundedArraySpec(
-                shape=[1280],
-                dtype=np.float32,
-                minimum=0.,
-                maximum=1.,
-                name='observation',
-            )
-            self.image_module = WrappedKerasLayer(retro, mobilenet)
-        else:
-            self._observation_spec = array_spec.BoundedArraySpec(
-                shape=self._obstacle_tower_env._observation_space.shape[:-1] + (1,),
-                dtype=np.float32,
-                minimum=0.,
-                maximum=1.,
-                name='observation',
-            )
-            '''
         self._done = False
 
     def action_spec(self):
@@ -96,9 +71,13 @@ class WrappedObstacleTowerEnv():
     def observation_spec(self):
         return self._observation_spec
 
-    def process_observation(self, observation):
-        grey_observation = np.mean(observation,axis=-1,keepdims=True)
-        return grey_observation
+    def gray_process_observation(self, observation):
+        observation = observation[0]
+        observation = (observation * 255).astype(np.uint8)
+        obs_image = Image.fromarray(observation)
+        obs_image = obs_image.resize((84, 84), Image.NEAREST)
+        grey_observation = np.mean(np.array(observation),axis=-1,keepdims=True)
+        return grey_observation / 255
     
     def _preprocess_observation(self, observation):
         """
@@ -116,6 +95,8 @@ class WrappedObstacleTowerEnv():
         if self.mobilenet:
             observation =  self._preprocess_observation(observation)
             return self.image_module(observation), observation
+        elif self.gray_scale:
+            return (self.grey_process_observation(observation), reward, done, info), observation
         else:
             return self._preprocess_observation(observation)
 
@@ -139,8 +120,10 @@ class WrappedObstacleTowerEnv():
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
             observation = self._preprocess_observation(observation)
             return (self.image_module(observation), reward, done, info), observation
+        elif self.gray_scale:
+            return (self.gray_process_observation(observation), reward, done, info), observation
         else:
-            return (self._preprocess_observation(observation), reward, done, info)
+            return (self._preprocess_observation(observation), reward, done, info), observation
 
     def close(self):
         self._obstacle_tower_env.close()
