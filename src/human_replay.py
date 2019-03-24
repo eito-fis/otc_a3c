@@ -63,6 +63,23 @@ def data_statistics(memory_buffer):
     count_right = sum(action == 2 for memory in memory_buffer for action in memory.actions)
     print("forward: {}\nleft: {}\nright: {}".format(count_forward, count_left, count_right))
 
+def concatenate_memories(memories_dir, output_filepath):
+    memory_files_list = os.listdir(memories_dir)
+    memory_files_list.remove('.DS_Store')
+    complete_memory = []
+    print("Concatenating memories from {} ...".format(memories_dir))
+    for memory_filename in memory_files_list:
+        memory_filepath = os.path.join(memories_dir, memory_filename)
+        mem_file = open(memory_filepath, 'rb')
+        memory = pickle.load(mem_file)
+        mem_file.close()
+        complete_memory = complete_memory + memory
+    output_file = open(output_filepath, 'wb+')
+    pickle.dump(complete_memory, output_file)
+    output_file.close()
+    print("Saved concatenated memory to {}".format(output_filepath))
+    exit()
+
 if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser('human_replay')
@@ -74,6 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('--augment', default=False, action='store_true')
     parser.add_argument('--save-obs', default=False, action='store_true')
     parser.add_argument('--floor', type=int, default=0)
+    parser.add_argument('--concat-dir', type=str, default=None)
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
@@ -81,6 +99,9 @@ if __name__ == '__main__':
     output_filepath = args.output_filepath
     episodes = args.episodes
     period = args.period
+
+    if args.concat_dir:
+        concatenate_memories(args.concat_dir, output_filepath)
 
     if args.input_filepath:
         print("Loading input buffer file...")
