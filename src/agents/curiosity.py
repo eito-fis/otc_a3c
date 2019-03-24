@@ -2,7 +2,6 @@
 import os
 import pickle
 import argparse
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import threading
 import multiprocessing
