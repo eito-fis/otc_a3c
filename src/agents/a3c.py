@@ -112,7 +112,7 @@ class MasterAgent():
                  env_func=None,
                  num_actions=2,
                  state_size=[4],
-                 stack_size,
+                 stack_size=4,
                  conv_size=None,
                  learning_rate=0.00042,
                  gamma=0.99,
@@ -306,8 +306,9 @@ class MasterAgent():
                     distribution = np.zeros(self.num_actions)
                     value = 100
                 else:
-                    stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
-                                      for i in reversed(range(self.stack_size))]
+                    stacked_state = [np.zeros_like(state) if step_counter - i < 0
+                                                          else memory.states[step_counter - i].numpy()
+                                                          for i in reversed(range(self.stack_size))]
                     logits = self.global_model.actor_model(stacked_state[None, :])
                     distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
                     action = np.argmax(logits)
