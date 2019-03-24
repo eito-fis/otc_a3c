@@ -65,7 +65,8 @@ def data_statistics(memory_buffer):
 
 def concatenate_memories(memories_dir, output_filepath):
     memory_files_list = os.listdir(memories_dir)
-    memory_files_list.remove('.DS_Store')
+    if '.DS_Store' in memory_files_list:
+        memory_files_list.remove('.DS_Store')
     complete_memory = []
     print("Concatenating memories from {} ...".format(memories_dir))
     for memory_filename in memory_files_list:
