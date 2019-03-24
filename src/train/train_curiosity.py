@@ -27,19 +27,21 @@ import tensorflow as tf
 from tensorflow import keras
 
 def main(args,
-         initial_train_steps=3000,
+         initial_train_steps=1000,
          num_episodes=1000,
          log_period=5,
          save_period=5,
-         visual_period=25,
+         visual_period=1,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
-         curiosity_fc=(1024, 512, 3),
+         curiosity_fc=(1024,512),
          num_actions=3,
          state_size=[1280],
+         batch_size=1000,
          conv_size=None,
          realtime_mode=True):
     #env = gym.make('CartPole-v0')
+    realtime_mode = args.render
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
@@ -58,22 +60,26 @@ def main(args,
                                env_func=env_func,
                                actor_fc=actor_fc,
                                critic_fc=critic_fc,
-                               curiosity_fc=curiosity_fc,
                                summary_writer=summary_writer,
                                save_path=save_dir,
-                               load_path=args.restore,
-                               visual_path=args.visual_dir,
-                               visual_period=visual_period)
+                               memory_path=args.memory_dir,
+                               visual_period=visual_period,
+                               load_path=args.restore)
 
     
-    if args.human_input != None:
-        print("Starting train on human input...")
-        master_agent.human_train(args.human_input, initial_train_steps)
-        print("Train done!")
+    if args.eval:
+        print("Starting evaluation...")
+        master_agent.play()
+        print("Evaluation done!")
+    else:
+        if args.human_input != None:
+            print("Starting train on human input...")
+            master_agent.human_train(args.human_input, initial_train_steps, batch_size)
+            print("Train done!")
 
-    print("Starting train...")
-    master_agent.distributed_train()
-    print("Train done!")
+        print("Starting train...")
+        master_agent.distributed_train()
+        print("Train done!")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('slideshow rl')
@@ -85,13 +91,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--env-filename',
         type=str,
-        default=None)
+        default='../ObstacleTower/obstacletower')
     parser.add_argument(
         '--human-input',
         type=str,
         default=None)
     parser.add_argument(
-        '--visual-dir',
+        '--memory-dir',
         type=str,
         default=None)
     parser.add_argument(
@@ -106,6 +112,14 @@ if __name__ == '__main__':
         '--n-epoch',
         type=int,
         default=1000)
+    parser.add_argument(
+        '--render',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--eval',
+        default=False,
+        action='store_true')
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
