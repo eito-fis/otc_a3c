@@ -28,9 +28,9 @@ from tensorflow import keras
 
 def main(args,
          initial_train_steps=1000,
-         num_episodes=1000,
-         log_period=5,
-         save_period=5,
+         num_episodes=10000,
+         log_period=50,
+         save_period=50,
          visual_period=1,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
