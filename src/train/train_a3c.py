@@ -36,6 +36,7 @@ def main(args,
          critic_fc=(1024, 512),
          num_actions=3,
          state_size=[1280],
+         batch_size=1000,
          conv_size=None,
          realtime_mode=True):
     #env = gym.make('CartPole-v0')
@@ -72,7 +73,7 @@ def main(args,
     else:
         if args.human_input != None:
             print("Starting train on human input...")
-            master_agent.human_train(args.human_input, initial_train_steps)
+            master_agent.human_train(args.human_input, initial_train_steps, batch_size)
             print("Train done!")
 
         print("Starting train...")

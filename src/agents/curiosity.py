@@ -243,7 +243,7 @@ class MasterAgent():
         return moving_average_rewards
 
     def human_train(self, data_path, train_steps, batch_size):
-        # Load memories from pickle file
+        # Load human input from pickle file
         data_file = open(data_path, 'rb')
         memory_list = pickle.load(data_file)
         data_file.close()
@@ -251,9 +251,11 @@ class MasterAgent():
 
         counts = [frame for memory in memory_list for frame in memory.actions]
         counts = [(len(counts) - c) / len(counts) for c in list(Counter(counts).values())]
-        print("Counts: {}".format(Counter(all_actions)))
+        print("Counts: {}".format(counts))
 
         def gen():
+            actions = []
+            states = []
             while True:
                 for memory in memory_list:
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
@@ -283,6 +285,15 @@ class MasterAgent():
             self.opt.apply_gradients(zip(total_grads,
                                              self.global_model.actor_model.trainable_weights))
             print("Step: {} | Loss: {}".format(train_step, total_loss))
+
+        critic_batch_size = 100
+        critic_steps = 1000
+        self.initialize_critic_model(critic_batch_size, critic_steps)
+
+        _save_path = os.path.join(self.save_path, "human_trained_model.h5")
+        os.makedirs(os.path.dirname(_save_path), exist_ok=True)
+        self.global_model.save_weights(_save_path)
+        print("Checkpoint saved to {}".format(_save_path))
             
     def compute_loss(self,
                      actions,
@@ -304,8 +315,7 @@ class MasterAgent():
         step_counter = 0
         reward_sum = 0
         rolling_average_state = np.zeros(state.shape) + (0.2 * state)
-        if self.memory_path:
-            memory = Memory()
+        memory = Memory()
 
         try:
             while not done:
@@ -318,7 +328,11 @@ class MasterAgent():
                 else:
                     stacked_state = [np.zeros_like(state) if step_counter - i < 0
                                                           else memory.states[step_counter - i].numpy()
-                                                          for i in reversed(range(self.stack_size))]
+                                                          for i in reversed(range(1,self.stack_size))]
+                    stacked_state.append(state)
+                    stacked_state = np.concatenate(stacked_state)
+                    # print(stacked_state.shape)
+                    # input()
                     logits = self.global_model.actor_model(stacked_state[None, :])
                     distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
                     action = np.argmax(logits)
