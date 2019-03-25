@@ -69,8 +69,12 @@ class Classifier():
                         stacked_state = np.concatenate(stacked_state)
                         yield action, stacked_state
 
+        dataset = tf.data.Dataset.from_generator(generator=gen,
+                                                 output_types=(tf.float32, tf.float32))
+        dataset = dataset.shuffle(50000).batch(batch_size)
+        generator = iter(dataset)
+
         print("Starting steps...")
-        generator = gen()
         for train_step in range(self.num_steps):
             actions, states  = next(generator)
             weights = [counts[action] for action in actions]
