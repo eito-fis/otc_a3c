@@ -6,6 +6,7 @@ import os
 import tensorflow as tf
 import argparse
 from PIL import Image
+import pickle
 
 def run(env, model, state_size, stack_size, boredom_thresh, num_actions):
     mem = Memory()
@@ -71,10 +72,11 @@ if __name__ == '__main__':
         model.load_weights(args.restore)
 
 
-    forward_dir = os.path.join(args.output_dir, "forward/")
-    left_dir = os.path.join(args.output_dir, "left/")
-    right_dir = os.path.join(args.output_dir, "right/")
+    forward_dir = os.path.join(args.output_dir, "images/forward/")
+    left_dir = os.path.join(args.output_dir, "images/left/")
+    right_dir = os.path.join(args.output_dir, "images/right/")
     directory_lookup = [forward_dir, left_dir, right_dir]
+    os.makedirs(os.path.dirname(os.path.join(args.output_dir, "memories/")), exist_ok=True)
     os.makedirs(os.path.dirname(forward_dir), exist_ok=True)
     os.makedirs(os.path.dirname(left_dir), exist_ok=True)
     os.makedirs(os.path.dirname(right_dir), exist_ok=True)
@@ -82,9 +84,9 @@ if __name__ == '__main__':
     episodes = 0
     episodes_saved = 0
     total_frames = 0
-    #memory_list = []
     print("Time to play!")
     for floor in range(args.floor):
+        memory_list = []
         env = WrappedObstacleTowerEnv(args.env_filepath,
                                       worker_id=0,
                                       realtime_mode=args.realtime,
@@ -103,9 +105,15 @@ if __name__ == '__main__':
                     print("Saved {}".format(save_path))
                 episodes_saved += 1
                 episode_frames += len(mem.actions)
-                total_frame += episode_frames
-                #mem.obs = []
-                #memory_list.append(mem)
+                total_frames += len(mem.actions)
+                mem.obs = []
+                memory_list.append(mem)
             else: print("Failed!")
             episodes += 1
+        save_path = os.path.join(args.output_dir, "memories/floor_{}".format(floor))
+        save_file = open(save_path, "wb+")
+        pickle.dump(memory_list, save_file)
+        save_file.close()
+        env.close()
+        print("Floor done! Memory saved to {}".format(save_path))
 
