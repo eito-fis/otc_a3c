@@ -121,7 +121,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=650,
+                 update_freq=5,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -434,15 +434,18 @@ class Worker(threading.Thread):
             action = 0
             time_count = 0
             done = False
+            prev_states = None
             while not done:
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = [np.random.random(state.shape) if time_count - i < 0
-                                              else mem.states[time_count - i].numpy()
-                                              for i in reversed(range(1, self.stack_size))]
+                    _prev = np.random.random(current_state.shape) if prev_states == None else prev_states[0]
+                    prev_states = prev_states[1:] if prev_states != None and len(prev_states) > 1 else None
+                    stacked_state = [_prev if time_count - i < 0
+                                           else mem.states[time_count - i].numpy()
+                                           for i in reversed(range(1, self.stack_size))]
                     stacked_state.append(current_state)
                     stacked_state = np.concatenate(stacked_state)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
@@ -474,7 +477,8 @@ class Worker(threading.Thread):
                         self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
                         Worker.global_episode += 1
                     time_count = 0
-                    # TODO FIX RETROGRADE AMNESIA
+
+                    prev_states = mem.states[-self.stack_size:]
                     mem.clear()
                 else:
                     ep_steps += 1
@@ -512,7 +516,7 @@ class Worker(threading.Thread):
             stacked_states.append(np.concatenate(stacked_state))
 
         # Get logits and values
-        logits, values = self.local_model(stacked_states)
+        logits, values = self.local_model(np.array(stacked_states))
 
         # Calculate our advantages
         advantage = np.array(discounted_rewards)[:, None] - values
