@@ -1,5 +1,6 @@
 
 import os
+import gc
 import pickle
 import argparse
 
@@ -120,7 +121,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=4,
+                 update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -220,13 +221,14 @@ class MasterAgent():
 
         counts = [frame for memory in memory_list for frame in memory.actions]
         counts = [(len(counts) - c) / len(counts) for c in list(Counter(counts).values())]
+        print(counts)
         print("Counts: {}".format(counts))
 
         def gen():
             while True:
                 for memory in memory_list:
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
-                        stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
+                        stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
                         stacked_state = np.concatenate(stacked_state)
                         yield (action, stacked_state)
@@ -259,6 +261,8 @@ class MasterAgent():
         os.makedirs(os.path.dirname(_save_path), exist_ok=True)
         self.global_model.save_weights(_save_path)
         print("Checkpoint saved to {}".format(_save_path))
+
+        gc.collect()
     
     def compute_loss(self,
                      actions,
@@ -286,13 +290,15 @@ class MasterAgent():
             
             self.opt.apply_gradients(zip(value_grads, self.global_model.critic_model.trainable_weights))
 
-    def play(self, env):
+    def play(self):
+        env = self.env_func(idx=0)
         state, observation = env.reset()
         done = False
         step_counter = 0
         reward_sum = 0
         rolling_average_state = np.zeros(state.shape) + (0.2 * state)
         memory = Memory()
+        floor = 0
 
         try:
             while not done:
@@ -303,19 +309,18 @@ class MasterAgent():
                     distribution = np.zeros(self.num_actions)
                     value = 100
                 else:
-                    stacked_state = [np.zeros_like(state) if step_counter - i < 0
+                    stacked_state = [np.random.random(state.shape) if step_counter - i < 0
                                                           else memory.states[step_counter - i].numpy()
                                                           for i in reversed(range(1,self.stack_size))]
                     stacked_state.append(state)
                     stacked_state = np.concatenate(stacked_state)
-                    # print(stacked_state.shape)
-                    # input()
                     logits = self.global_model.actor_model(stacked_state[None, :])
                     distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
                     action = np.argmax(logits)
                     value = self.global_model.critic_model(stacked_state[None, :])
                 (new_state, reward, done, _), new_observation = env.step(action)
                 memory.store(state, action, reward)
+                if reward >= 1: floor += 1
                 if self.memory_path:
                     memory.obs.append(observation)
                     memory.probs.append(distribution)
@@ -335,6 +340,7 @@ class MasterAgent():
                 output_file = open(_mem_path, 'wb+')
                 pickle.dump(memory, output_file)
             env.close()
+        return floor
 
 
 class Worker(threading.Thread):
@@ -434,7 +440,7 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = [np.zeros_like(current_state) if time_count - i < 0
+                    stacked_state = [np.random.random(state.shape) if time_count - i < 0
                                               else mem.states[time_count - i].numpy()
                                               for i in reversed(range(1, self.stack_size))]
                     stacked_state.append(current_state)
@@ -501,7 +507,7 @@ class Worker(threading.Thread):
 
         stacked_states = []
         for index, state in enumerate(memory.states):
-            stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
+            stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
             stacked_states.append(np.concatenate(stacked_state))
 
