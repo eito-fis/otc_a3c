@@ -120,7 +120,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=650,
+                 update_freq=4,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -154,7 +154,7 @@ class MasterAgent():
         self.boredom_thresh = boredom_thresh
         self.update_freq = update_freq
 
-        self.opt = keras.optimizers.Adam(learning_rate)
+        self.opt = tf.keras.optimizers.Adam(learning_rate)
         self.env_func = env_func
 
         self.global_model = ActorCriticModel(num_actions=self.num_actions,
@@ -192,8 +192,8 @@ class MasterAgent():
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
                    memory_path=self.memory_path,
-                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                   #save_path=self.save_path) for i in range(1)]
+                   save_path=self.save_path) for i in range(1)]
+                   #save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -251,8 +251,7 @@ class MasterAgent():
         
             # Calculate and apply policy gradients
             total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
-            self.opt.apply_gradients(zip(total_grads,
-                                             self.global_model.actor_model.trainable_weights))
+            self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights))
             print("Step: {} | Loss: {}".format(train_step, total_loss))
 
         critic_batch_size = 100
@@ -473,7 +472,6 @@ class Worker(threading.Thread):
                     if done:
                         self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
                         Worker.global_episode += 1
-                    mem.clear()
                     time_count = 0
                 else:
                     ep_steps += 1
@@ -517,17 +515,17 @@ class Worker(threading.Thread):
         advantage = np.array(discounted_rewards)[:, None] - values
 
         # Calculate our policy loss
-        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(tf.nn.softmax(logits)),
-                                                             logits,
-                                                             from_logits=True)
-        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions)[:, None],
-                                                   logits,
-                                                   sample_weight=tf.stop_gradient(advantage))
+        cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+        entropy_loss = cce(tf.stop_gradient(tf.nn.softmax(logits)), logits)
+        wce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        policy_loss = wce(memory.actions,
+                          logits,
+                          sample_weight=tf.stop_gradient(advantage))
         policy_loss = policy_loss - (self.entropy_discount * entropy_loss)
 
         # Calculate our value loss
-        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
+        mse = tf.keras.losses.MeanSquaredError()
+        value_loss = mse(tf.stop_gradient(np.array(discounted_rewards)[:, None]), values)
 
         if save_visual:
             memory.probs.extend(np.squeeze(tf.nn.softmax(logits).numpy()).tolist())
