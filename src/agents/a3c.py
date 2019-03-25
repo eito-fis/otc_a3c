@@ -223,26 +223,23 @@ class MasterAgent():
         print("Counts: {}".format(counts))
 
         def gen():
-            actions = []
-            states = []
             while True:
                 for memory in memory_list:
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
-                        if len(actions) == batch_size:
-                            weights = [counts[action] for action in actions]
-                            yield actions, states, weights
-                            actions = []
-                            states = [] 
-                        actions.append(action)
                         stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
                         stacked_state = np.concatenate(stacked_state)
-                        states.append(stacked_state)
+                        yield (action, stacked_state)
+
+        dataset = tf.data.Dataset.from_generator(generator=gen,
+                                                 output_types=(tf.float32, tf.float32))
+        dataset = dataset.shuffle(50000).batch(batch_size)
+        generator = iter(dataset)
 
         print("Starting steps...")
-        generator = gen()
         for train_step in range(train_steps):
-            actions, states, weights = next(generator)
+            actions, states  = next(generator)
+            weights = [counts[action] for action in actions]
             with tf.GradientTape() as tape:
                 total_loss = self.compute_loss(actions,
                                                states,
@@ -264,18 +261,17 @@ class MasterAgent():
         print("Checkpoint saved to {}".format(_save_path))
     
     def compute_loss(self,
-                     all_actions,
-                     all_states,
-                     all_weights,
+                     actions,
+                     states,
+                     weights,
                      gamma):
 
         # Get logits and values
-        logits, values = self.global_model(
-                                tf.convert_to_tensor(np.vstack(all_states),
-                                dtype=tf.float32))
+        logits, values = self.global_model(states)
 
         weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        policy_loss = weighted_sparse_crossentropy(np.array(all_actions)[:, None], logits, sample_weight=all_weights)
+        policy_loss = weighted_sparse_crossentropy(actions[:, None], logits, sample_weight=weights)
+
         return policy_loss
 
     def initialize_critic_model(self, batch_size, critic_steps):
