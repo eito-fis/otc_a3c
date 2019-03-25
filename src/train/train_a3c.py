@@ -29,7 +29,7 @@ from tensorflow import keras
 # import time
 # import matplotlib
 # matplotlib.use('PS')
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 def main(args,
          initial_train_steps=5000,
@@ -44,7 +44,6 @@ def main(args,
          batch_size=1000,
          conv_size=None,
          realtime_mode=True):
-    #env = gym.make('CartPole-v0')
     realtime_mode = args.render
 
     def env_func(idx):
@@ -76,15 +75,12 @@ def main(args,
         reached_floors = []
         print("Starting evaluation...")
         env = env_func(0)
-        # start_time = time.time()
         for _ in range(100):
             reached_floors.append(master_agent.play(env))
             floors_hist = np.histogram(reached_floors, 5, (0,5))
             print(floors_hist)
-        # total_time = time.time() - start_time
-        # print(total_time)
-        # plt.hist(reached_floors, 5, (0,5))
-        # plt.show()
+        plt.hist(reached_floors, 5, (0,5))
+        plt.show()
         print("Evaluation done!")
     else:
         if args.human_input != None:
