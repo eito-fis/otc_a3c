@@ -26,11 +26,16 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
+# import time
+# import matplotlib
+# matplotlib.use('PS')
+# import matplotlib.pyplot as plt
+
 def main(args,
-         initial_train_steps=1000,
+         initial_train_steps=5000,
          num_episodes=1000,
          log_period=5,
-         save_period=5,
+         save_period=10,
          visual_period=1,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
@@ -67,8 +72,18 @@ def main(args,
 
     
     if args.eval:
+        reached_floors = []
         print("Starting evaluation...")
-        master_agent.play()
+        env = env_func(0)
+        # start_time = time.time()
+        for _ in range(100):
+            reached_floors.append(master_agent.play(env))
+            floors_hist = np.histogram(reached_floors, 5, (0,5))
+            print(floors_hist)
+        # total_time = time.time() - start_time
+        # print(total_time)
+        # plt.hist(reached_floors, 5, (0,5))
+        # plt.show()
         print("Evaluation done!")
     else:
         if args.human_input != None:
