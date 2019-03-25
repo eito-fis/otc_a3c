@@ -50,7 +50,8 @@ def main(args,
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
                                        worker_id=idx,
-                                       mobilenet=True,
+                                       mobilenet=args.mobilenet,
+                                       gray_scale=args.gray,
                                        realtime_mode=realtime_mode)
 
     log_dir = os.path.join(args.output_dir, "log")
@@ -132,6 +133,14 @@ if __name__ == '__main__':
         action='store_true')
     parser.add_argument(
         '--eval',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--gray',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--mobilenet',
         default=False,
         action='store_true')
     args = parser.parse_args()
