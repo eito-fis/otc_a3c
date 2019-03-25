@@ -27,26 +27,28 @@ import tensorflow as tf
 from tensorflow import keras
 
 def main(args,
-         initial_train_steps=1000,
+         initial_train_steps=100,
          num_episodes=10000,
          log_period=50,
          save_period=50,
          visual_period=1,
-         actor_fc=(1024, 512),
-         critic_fc=(1024, 512),
+         actor_fc=(1024,512),
+         critic_fc=(1024,512),
          curiosity_fc=(1024,512),
          num_actions=3,
-         state_size=[1280],
+         state_size=[84,84,1],
          batch_size=1000,
-         conv_size=None,
-         realtime_mode=True):
+         realtime_mode=True,
+         conv_size=None):
+         #conv_size=[(3,4,32), (3,2,64), (3,1,128)]):
     #env = gym.make('CartPole-v0')
     realtime_mode = args.render
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
                                        worker_id=idx,
-                                       mobilenet=True,
+                                       mobilenet=args.mobilenet,
+                                       gray_scale=args.gray,
                                        realtime_mode=realtime_mode)
 
     log_dir = os.path.join(args.output_dir, "log")
@@ -75,7 +77,7 @@ def main(args,
     else:
         if args.human_input != None:
             print("Starting train on human input...")
-            master_agent.human_train(args.human_input, initial_train_steps, batch_size)
+            master_agent.human_train(args.human_input, initial_train_steps, batch_size, args.gray)
             print("Train done!")
 
         print("Starting train...")
@@ -119,6 +121,14 @@ if __name__ == '__main__':
         action='store_true')
     parser.add_argument(
         '--eval',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--gray',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--mobilenet',
         default=False,
         action='store_true')
     args = parser.parse_args()
