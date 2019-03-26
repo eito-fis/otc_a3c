@@ -35,7 +35,7 @@ def record(episode,
     num_steps: The number of steps the episode took to complete
     """
     global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -125,6 +125,7 @@ class ActorCriticModel(keras.Model):
         self.critic_model(np.random.random((1,) + tuple(state_size)))
         self.curiosity_model(np.random.random((1,) + tuple(state_size)))
         self.target_model(np.random.random((1,) + tuple(state_size)))
+        self.dist(np.random.random((1, num_actions)))
 
     def call(self, inputs):
         if self.conv_model is not None:
@@ -132,7 +133,7 @@ class ActorCriticModel(keras.Model):
         # Call our models on the input and return
         actor_logits = self.actor_model(inputs)
         value = self.critic_model(tf.stop_gradient(inputs))
-        prediction = self.curiosity_model(tf.stop_gradient(inputs)
+        prediction = self.curiosity_model(tf.stop_gradient(inputs))
         target = self.target_model(tf.stop_gradient(inputs))
 
         return actor_logits, value, prediction, target
@@ -340,6 +341,7 @@ class MasterAgent():
         rolling_average_state = np.zeros(state.shape) + (0.2 * state)
         memory = Memory()
 
+        prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
         try:
             while not done:
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
@@ -349,11 +351,8 @@ class MasterAgent():
                     distribution = np.zeros(self.num_actions)
                     value = 100
                 else:
-                    stacked_state = [np.random.random(state.shape) if step_counter - i < 0
-                                                          else memory.states[step_counter - i]
-                                                          for i in reversed(range(1,self.stack_size))]
-                    stacked_state.append(state)
-                    stacked_state = np.concatenate(stacked_state)
+                    prev_states = prev_states[1:] + [state]
+                    stacked_state = np.concatenate(prev_states)
                     # print(stacked_state.shape)
                     # input()
                     logits = self.global_model.actor_model(stacked_state[None, :])
@@ -478,17 +477,15 @@ class Worker(threading.Thread):
 
             time_count = 0
             done = False
+            prev_states = [np.random.random(current_state.shape) for _ in range(self.stack_size)]
             while not done:
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = [np.random.random(current_state.state) if time_count - i < 0
-                                                                  else mem.states[time_count - i]
-                                                                  for i in reversed(range(1, self.stack_size))]
-                    stacked_state.append(current_state)
-                    stacked_state = np.concatenate(stacked_state, axis=-1)
+                    prev_states = prev_states[1:] + [current_state]
+                    stacked_state = np.concatenate(prev_states, axis=-1)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
