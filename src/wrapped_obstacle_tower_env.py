@@ -61,6 +61,7 @@ class WrappedObstacleTowerEnv():
         self._action_space = self._flattener.action_space
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
+        self.retro = retro
         if mobilenet:
             self.image_module = WrappedKerasLayer(retro, self.mobilenet)
         self._done = False
@@ -72,18 +73,17 @@ class WrappedObstacleTowerEnv():
         return self._observation_spec
 
     def gray_process_observation(self, observation):
-        observation = observation[0]
-        observation = (observation * 255).astype(np.uint8)
-        obs_image = Image.fromarray(observation)
-        obs_image = obs_image.resize((84, 84), Image.NEAREST)
-        grey_observation = np.mean(np.array(observation),axis=-1,keepdims=True)
-        return grey_observation / 255
-    
+        if not self.retro:
+            observation = observation[0]
+        gray_observation = np.mean(np.array(observation),axis=-1,keepdims=True)
+        return gray_observation
+
     def _preprocess_observation(self, observation):
         """
         Re-sizes visual observation to 84x84
         """
-        observation = observation[0]
+        if not self.retro:
+            observation = observation[0]
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((224, 224), Image.NEAREST)
@@ -96,27 +96,27 @@ class WrappedObstacleTowerEnv():
             observation =  self._preprocess_observation(observation)
             return self.image_module(observation), observation
         elif self.gray_scale:
-            return (self.grey_process_observation(observation), reward, done, info), observation
+            return self.gray_process_observation(observation), observation
         else:
-            return self._preprocess_observation(observation)
+            return self._preprocess_observation(observation), observation
 
     def step(self, action):
         #if self._done:
         #    return self.reset()
 
-        if action == 0: # forward
-            action = [1, 0, 0, 0]
-        elif action == 1: # rotate camera left
-            action = [0, 1, 0, 0]
-        elif action == 2: # rotate camera right
-            action = [0, 2, 0, 0]
-        elif action == 3: # jump forward
-            action = [1, 0, 1, 0]
+        # if action == 0: # forward
+        #     action = [1, 0, 0, 0]
+        # elif action == 1: # rotate camera left
+        #     action = [0, 1, 0, 0]
+        # elif action == 2: # rotate camera right
+        #     action = [0, 2, 0, 0]
+        # elif action == 3: # jump forward
+        #     action = [1, 0, 1, 0]
 
 
         observation, reward, done, info = self._obstacle_tower_env.step(action)
         self._done = done
-        
+
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
             observation = self._preprocess_observation(observation)
             return (self.image_module(observation), reward, done, info), observation

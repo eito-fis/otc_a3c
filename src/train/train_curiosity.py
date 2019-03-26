@@ -32,13 +32,13 @@ def main(args,
          log_period=50,
          save_period=50,
          visual_period=1,
-         actor_fc=(1024, 512),
+         actor_fc=(512,),
          critic_fc=(1024, 512),
          curiosity_fc=(1024,512),
          num_actions=3,
-         state_size=[1280],
+         state_size=[84,84,1],
          batch_size=1000,
-         conv_size=None,
+         conv_size=[(8,4,32),(4,2,64),(3,1,64)],
          realtime_mode=True):
     #env = gym.make('CartPole-v0')
     realtime_mode = args.render
@@ -46,7 +46,9 @@ def main(args,
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
                                        worker_id=idx,
-                                       mobilenet=True,
+                                       mobilenet=False,
+                                       gray_scale=True,
+                                       retro=True,
                                        realtime_mode=realtime_mode)
 
     log_dir = os.path.join(args.output_dir, "log")
@@ -65,9 +67,10 @@ def main(args,
                                save_path=save_dir,
                                memory_path=args.memory_dir,
                                visual_period=visual_period,
+                               boredom_thresh=10.,
                                load_path=args.restore)
 
-    
+
     if args.eval:
         print("Starting evaluation...")
         master_agent.play()
@@ -124,5 +127,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
-    
+
     main(args)

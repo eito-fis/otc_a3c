@@ -79,7 +79,22 @@ class ActorCriticModel(keras.Model):
                  curiosity_fc=None):
         super().__init__()
         state_size = state_size[:-1] + [state_size[-1] * stack_size]
-        
+        conv_state_size = state_size
+        if conv_size != None:
+            # Build conv model
+            preprocess_convs = [keras.layers.Conv2D(padding="same",
+                                                    kernel_size=k,
+                                                    strides=s,
+                                                    filters=f) for (k,s,f) in conv_size]
+            flatten = keras.layers.Flatten()
+            self.conv_model = tf.keras.Sequential(preprocess_convs + [flatten])
+            self.conv_model.build([None] + state_size)
+            model_input = self.conv_model(
+                            tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
+
+            state_size = [model_input.shape[-1]]
+        else: self.conv_model = None
+
         # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
@@ -106,11 +121,14 @@ class ActorCriticModel(keras.Model):
         self.dist = ProbabilityDistribution()
 
         # Run the entire pipeline to build the graph before async workers start
-        self.get_action_value(np.random.random((1,) + tuple(state_size)))
+        self.actor_model(np.random.random((1,) + tuple(state_size)))
+        self.critic_model(np.random.random((1,) + tuple(state_size)))
         self.curiosity_model(np.random.random((1,) + tuple(state_size)))
         self.target_model(np.random.random((1,) + tuple(state_size)))
 
     def call(self, inputs):
+        if self.conv_model is not None:
+            inputs = self.conv_model(inputs)
         # Call our models on the input and return
         actor_logits = self.actor_model(inputs)
         value = self.critic_model(inputs)
@@ -120,6 +138,9 @@ class ActorCriticModel(keras.Model):
         return actor_logits, value, prediction, target
 
     def get_action_value(self, obs):
+        if self.conv_model is not None:
+            obs = self.conv_model(tf.convert_to_tensor(obs, dtype=tf.float32))
+
         logits = self.actor_model(obs)
         value = self.critic_model(obs)
 
@@ -222,8 +243,8 @@ class MasterAgent():
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
                    memory_path=self.memory_path,
-                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                   #save_path=self.save_path) for i in range(1)]
+                   # save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
+                   save_path=self.save_path) for i in range(1)]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -262,7 +283,7 @@ class MasterAgent():
                             weights = [counts[action] for action in actions]
                             yield actions, states, weights
                             actions = []
-                            states = [] 
+                            states = []
                         actions.append(action)
                         stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
@@ -278,7 +299,7 @@ class MasterAgent():
                                                states,
                                                weights,
                                                self.gamma)
-        
+
             # Calculate and apply policy gradients
             total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
             self.opt.apply_gradients(zip(total_grads,
@@ -293,7 +314,7 @@ class MasterAgent():
         os.makedirs(os.path.dirname(_save_path), exist_ok=True)
         self.global_model.save_weights(_save_path)
         print("Checkpoint saved to {}".format(_save_path))
-            
+
     def compute_loss(self,
                      actions,
                      states,
@@ -461,10 +482,10 @@ class Worker(threading.Thread):
                     action = np.random.choice(possible_actions)
                 else:
                     stacked_state = [np.zeros_like(current_state) if time_count - i < 0
-                                                                  else mem.states[time_count - i].numpy()
+                                                                  else mem.states[time_count - i]
                                                                   for i in reversed(range(1, self.stack_size))]
                     stacked_state.append(current_state)
-                    stacked_state = np.concatenate(stacked_state)
+                    stacked_state = np.concatenate(stacked_state, axis=-1)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
@@ -472,7 +493,7 @@ class Worker(threading.Thread):
                 mem.store(current_state, action, reward)
                 if save_visual:
                     mem.obs.append(obs)
-                               
+
                 if time_count == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
@@ -521,7 +542,7 @@ class Worker(threading.Thread):
         else:
             reward_sum = self.local_model.critic_model(np.concatenate(memory.states[-self.stack_size:])[None, :])
             reward_sum = np.squeeze(reward_sum.numpy())
- 
+
         # Get discounted rewards
         discounted_rewards = []
         for reward in memory.rewards[::-1]:  # reverse buffer r
@@ -605,4 +626,3 @@ class Worker(threading.Thread):
             _save_path = os.path.join(self.save_path, "worker_{}_model_{}.h5".format(self.worker_idx, current_episode))
             self.local_model.save_weights(_save_path)
             print("Checkpoint saved to {}".format(_save_path))
-
