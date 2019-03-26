@@ -291,8 +291,7 @@ class MasterAgent():
             
             self.opt.apply_gradients(zip(value_grads, self.global_model.critic_model.trainable_weights))
 
-    def play(self):
-        env = self.env_func(idx=0)
+    def play(self, env):
         state, observation = env.reset()
         done = False
         step_counter = 0
@@ -338,7 +337,6 @@ class MasterAgent():
                 os.makedirs(os.path.dirname(_mem_path), exist_ok=True)
                 output_file = open(_mem_path, 'wb+')
                 pickle.dump(memory, output_file)
-            env.close()
         return floor
 
 
