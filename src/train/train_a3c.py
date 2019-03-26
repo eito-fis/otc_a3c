@@ -32,7 +32,7 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=5000,
+         initial_train_steps=500,
          num_episodes=1000,
          log_period=5,
          save_period=10,
@@ -40,6 +40,7 @@ def main(args,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
          num_actions=3,
+         stack_size=10,
          state_size=[1280],
          batch_size=1000,
          conv_size=None,
@@ -62,6 +63,7 @@ def main(args,
                                state_size=state_size,
                                conv_size=conv_size,
                                env_func=env_func,
+                               stack_size=stack_size,
                                actor_fc=actor_fc,
                                critic_fc=critic_fc,
                                summary_writer=summary_writer,
@@ -70,7 +72,6 @@ def main(args,
                                visual_period=visual_period,
                                load_path=args.restore)
 
-    
     if args.eval:
         reached_floors = []
         print("Starting evaluation...")
@@ -142,5 +143,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
-    
+
     main(args)

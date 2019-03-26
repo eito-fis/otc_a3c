@@ -78,7 +78,7 @@ class ActorCriticModel(keras.Model):
                  critic_fc=None):
         super().__init__()
         state_size = state_size[:-1] + [state_size[-1] * stack_size]
-        
+
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
 
@@ -249,7 +249,7 @@ class MasterAgent():
                                                states,
                                                weights,
                                                self.gamma)
-        
+
             # Calculate and apply policy gradients
             total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
             self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights))
@@ -265,7 +265,7 @@ class MasterAgent():
         print("Checkpoint saved to {}".format(_save_path))
 
         gc.collect()
-    
+
     def compute_loss(self,
                      actions,
                      states,
@@ -289,7 +289,7 @@ class MasterAgent():
                 values = self.global_model.critic_model(random_states)
                 value_loss = keras.losses.mean_squared_error(zero_rewards[:, None], values)
             value_grads = tape.gradient(value_loss, self.global_model.critic_model.trainable_weights)
-            
+
             self.opt.apply_gradients(zip(value_grads, self.global_model.critic_model.trainable_weights))
 
     def play(self, env):
@@ -439,7 +439,7 @@ class Worker(threading.Thread):
             prev_states = [np.random.random(current_state.shape) for _ in range(self.stack_size)]
             boredom_actions = []
             while not done:
-                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
                 if step_counter > 10 and _deviation < self.boredom_thresh:
                     # possible_actions = np.delete(np.array([0, 1, 2]), action)
                     # action = np.random.choice(possible_actions)
@@ -453,7 +453,7 @@ class Worker(threading.Thread):
                 mem.store(current_state, action, reward)
                 if save_visual:
                     mem.obs.append(obs)
-                
+
                 if time_count == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
@@ -546,7 +546,7 @@ class Worker(threading.Thread):
             pickle.dump(mem, pickle_file)
             pickle_file.close()
             print("Memory saved to {}".format(pickle_path))
-            
+
         # Metrics logging and saving
         Worker.global_moving_average_reward = \
         record(Worker.global_episode, ep_reward, self.worker_idx,
@@ -573,4 +573,3 @@ class Worker(threading.Thread):
             _save_path = os.path.join(self.save_path, "worker_{}_model_{}.h5".format(self.worker_idx, current_episode))
             self.local_model.save_weights(_save_path)
             print("Checkpoint saved to {}".format(_save_path))
-
