@@ -35,7 +35,7 @@ def record(episode,
     num_steps: The number of steps the episode took to complete
     """
     global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -193,6 +193,8 @@ class MasterAgent():
                                              curiosity_fc=self.curiosity_fc)
         if load_path != None:
             self.global_model.load_weights(load_path)
+        else:
+            self.initialize_critic_model(100, 1000)
 
     def distributed_train(self):
         res_queue = Queue()
@@ -306,6 +308,18 @@ class MasterAgent():
         policy_loss = weighted_sparse_crossentropy(np.array(actions)[:, None], logits, sample_weight=weights)
 
         return policy_loss
+
+    def initialize_critic_model(self, batch_size, critic_steps):
+        random_states = np.random.random((batch_size,) + tuple(self.state_size[:-1] +
+                                                            [self.state_size[-1] * self.stack_size]))
+        zero_rewards = np.zeros(batch_size)
+        for critic_step in range(critic_steps):
+            with tf.GradientTape() as tape:
+                values = self.global_model.critic_model(random_states)
+                value_loss = keras.losses.mean_squared_error(zero_rewards[:, None], values)
+            value_grads = tape.gradient(value_loss, self.global_model.critic_model.trainable_weights)
+            
+            self.opt.apply_gradients(zip(value_grads, self.global_model.critic_model.trainable_weights))
 
     def play(self):
         env = self.env_func(idx=0)
@@ -475,7 +489,7 @@ class Worker(threading.Thread):
                     # Update model
                     with tf.GradientTape() as tape:
                         total_loss  = self.compute_loss(mem, done, self.gamma, save_visual)
-                    self.ep_loss += tf.reduce_sum(total_loss)
+                    self.ep_loss += total_loss
 
                     # Calculate and apply policy gradients
                     total_grads = tape.gradient(total_loss,

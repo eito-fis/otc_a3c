@@ -36,7 +36,7 @@ def record(episode,
     num_steps: The number of steps the episode took to complete
     """
     global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, int(total_loss / float(num_steps) * 1000) / 1000, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -457,7 +457,7 @@ class Worker(threading.Thread):
                     # Update model
                     with tf.GradientTape() as tape:
                         total_loss  = self.compute_loss(mem, done, self.gamma, save_visual)
-                    self.ep_loss += tf.reduce_sum(total_loss)
+                    self.ep_loss += total_loss
 
                     # Calculate and apply policy gradients
                     total_grads = tape.gradient(total_loss, self.local_model.trainable_weights)
