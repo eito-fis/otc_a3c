@@ -445,9 +445,14 @@ class Worker(threading.Thread):
                     # action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
                     boredom_actions = [1] * 4
-                if boredom_actions:
+                if len(boredom_actions):
                     action = boredom_actions.pop()
                     [self.env.step(action) for _ in range(4)]
+                else:
+                    prev_states = prev_states[1:] + [current_state]
+                    stacked_state = np.concatenate(prev_states)
+                    action, _ = self.local_model.get_action_value(stacked_state[None, :])
+
                 (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
                 mem.store(current_state, action, reward)
