@@ -222,13 +222,14 @@ class MasterAgent():
         counts = np.zeros(self.num_actions)
         for memory in memory_list:
             for action in memory.actions:
-                counts[action] += 1
+                if action < self.num_actions: counts[action] += 1
         counts = [(sum(counts) - c) / sum(counts) for c in counts]
 
         def gen():
             while True:
                 for memory in memory_list:
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
+                        if action >= self.num_actions: continue
                         stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
                         stacked_state = np.concatenate(stacked_state)
@@ -236,7 +237,7 @@ class MasterAgent():
 
         dataset = tf.data.Dataset.from_generator(generator=gen,
                                                  output_types=(tf.float32, tf.float32))
-        dataset = dataset.shuffle(50000).batch(batch_size)
+        dataset = dataset.shuffle(10000).batch(batch_size)
         generator = iter(dataset)
 
         print("Starting steps...")
