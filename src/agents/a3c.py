@@ -440,14 +440,14 @@ class Worker(threading.Thread):
             boredom_actions = []
             while not done:
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
-                if step_counter > 10 and _deviation < self.boredom_thresh:
+                if time_count > 10 and _deviation < self.boredom_thresh:
                     # possible_actions = np.delete(np.array([0, 1, 2]), action)
                     # action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
                     boredom_actions = [1] * 4
                 if boredom_actions:
                     action = boredom_actions.pop()
-                    [env.step(action) for _ in range(4)]
+                    [self.env.step(action) for _ in range(4)]
                 (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
                 mem.store(current_state, action, reward)
