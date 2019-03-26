@@ -441,7 +441,7 @@ class Worker(threading.Thread):
                     action = np.random.choice(possible_actions)
                 else:
                     prev_states = prev_states[1:] + [current_state]
-                    stacked_state = np.concatenate(stacked_state)
+                    stacked_state = np.concatenate(prev_states)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
@@ -472,7 +472,6 @@ class Worker(threading.Thread):
                         Worker.global_episode += 1
                     time_count = 0
 
-                    prev_states = mem.states[-(self.stack_size - 1):]
                     mem.clear()
                 else:
                     ep_steps += 1
