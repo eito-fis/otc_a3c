@@ -219,10 +219,11 @@ class MasterAgent():
         data_file.close()
         print("Loaded files")
 
-        counts = [frame for memory in memory_list for frame in memory.actions]
-        counts = [(len(counts) - c) / len(counts) for c in list(Counter(counts).values())]
-        print(counts)
-        print("Counts: {}".format(counts))
+        counts = np.zeros(self.num_actions)
+        for memory in memory_list:
+            for action in memory.actions:
+                counts[action] += 1
+        counts = [(sum(counts) - c) / sum(counts) for c in counts]
 
         def gen():
             while True:
