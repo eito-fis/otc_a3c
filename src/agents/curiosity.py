@@ -316,6 +316,7 @@ class MasterAgent():
         rolling_average_state = np.zeros(state.shape) + (0.2 * state)
         memory = Memory()
 
+        prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
         try:
             while not done:
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
@@ -325,12 +326,8 @@ class MasterAgent():
                     distribution = np.zeros(self.num_actions)
                     value = 100
                 else:
-                    stacked_state = [np.zeros_like(state) if step_counter - i < 0
-                                                          else memory.states[step_counter - i].numpy()
-                                                          for i in reversed(range(1,self.stack_size))]
-
-                    stacked_state.append(state)
-                    stacked_state = np.concatenate(stacked_state)
+                    prev_states = prev_states[1:] + [state]
+                    stacked_state = np.concatenate(prev_states)
                     logits = self.global_model.actor_model(stacked_state[None, :])
                     distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
                     action = np.argmax(logits)
@@ -454,22 +451,15 @@ class Worker(threading.Thread):
 
             time_count = 0
             done = False
-            prev_states = None
+            prev_states = [np.random.random(current_state.shape) for _ in range(self.stack_size)]
             while not done:
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    if prev_states != None:
-                        stacked_state = prev_states + mem.states[:(self.stack_size - len(prev_states) - 1)] + [current_state]
-                        prev_states = prev_states[1:] if prev_states != None and len(prev_states) > 1 else None
-                    else:
-                        stacked_state = [np.random.random(current_state.shape) if time_count - i < 0
-                                           else mem.states[time_count - i].numpy()
-                                           for i in reversed(range(1, self.stack_size))]
-                        stacked_state.append(current_state)
-                    stacked_state = np.concatenate(stacked_state)
+                    prev_states = prev_states[1:] + [current_state]
+                    stacked_state = np.concatenate(prev_states)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
@@ -503,7 +493,6 @@ class Worker(threading.Thread):
                     if done:
                         self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
                         Worker.global_episode += 1
-                    prev_states = mem.states[-(self.stack_size - 1):]
                     mem.clear()
                     time_count = 0
                 else:
