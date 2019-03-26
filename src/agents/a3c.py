@@ -121,7 +121,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=5,
+                 update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -193,8 +193,8 @@ class MasterAgent():
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
                    memory_path=self.memory_path,
-                   save_path=self.save_path) for i in range(1)]
-                   #save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
+                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
+                   #save_path=self.save_path) for i in range(1)]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -442,12 +442,14 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    _prev = np.random.random(current_state.shape) if prev_states == None else prev_states[0]
-                    prev_states = prev_states[1:] if prev_states != None and len(prev_states) > 1 else None
-                    stacked_state = [_prev if time_count - i < 0
+                    if prev_states != None:
+                        stacked_state = prev_states + mem.states[:(self.stack_size - len(prev_states) - 1)] + [current_state]
+                        prev_states = prev_states[1:] if prev_states != None and len(prev_states) > 1 else None
+                    else:
+                        stacked_state = [np.random.random(current_state.shape) if time_count - i < 0
                                            else mem.states[time_count - i].numpy()
                                            for i in reversed(range(1, self.stack_size))]
-                    stacked_state.append(current_state)
+                        stacked_state.append(current_state)
                     stacked_state = np.concatenate(stacked_state)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
@@ -479,7 +481,7 @@ class Worker(threading.Thread):
                         Worker.global_episode += 1
                     time_count = 0
 
-                    prev_states = mem.states[-self.stack_size:]
+                    prev_states = mem.states[-(self.stack_size - 1):]
                     mem.clear()
                 else:
                     ep_steps += 1
