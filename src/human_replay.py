@@ -11,8 +11,8 @@ import numpy as np
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 from src.agents.a3c import Memory
 
-def input_action():
-    possible_actions = ['w', 'k', 'l', ' ', 'p']
+def input_action():    # 0    1    2    3    4    5    6    7    8    9
+    possible_actions = ['w', 'k', 'l', ' ', 'p', 's', 'd', 'a', ',', '.']
     while True:
         action = getch.getch()
         if action in possible_actions:
@@ -30,10 +30,14 @@ def run(env, save_obs):
         action = input_action()
         if action == 4:
             break
+        elif action > 7:
+            mem.store(current_state, action, reward)
+            print("Custom action {} stored!".format(action))
+            if save_obs: mem.obs.append(observation)
+            continue
         (new_state, reward, done, _), new_observation = env.step(action)
         mem.store(current_state, action, reward)
-        if save_obs:
-            mem.obs.append(observation)
+        if save_obs: mem.obs.append(observation)
         current_state = new_state
         observation = new_observation
 
@@ -81,11 +85,31 @@ def concatenate_memories(memories_dir, output_filepath):
     print("Saved concatenated memory to {}".format(output_filepath))
     exit()
 
+def custom_memory(custom_filepath, output_filepath):
+    print("Generating custom memory...")
+    input_filepath = custom_filepath
+    input_buffer_file = open(input_filepath, 'rb')
+    memory_buffer = pickle.load(input_buffer_file)
+    input_buffer_file.close()
+    
+    custom_memories = []
+    for memory in memory_buffer:
+        for i in range(len(memory.actions)):
+            if memory.actions[i] > 7:
+                custom_memory = Memory()
+                custom_memory.store(memory.states[i], memory.actions[i] - 7, memory.rewards[i])
+                custom_memories.append(custom_memory)
+    output_file = open(output_filepath, 'wb+')
+    pickle.dump(custom_memories, output_file)
+    output_file.close()
+    print("Saved custom memory to {}".format(output_filepath))
+    exit()
+
 if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser('human_replay')
     parser.add_argument('--env-filepath', type=str, default='../ObstacleTower/obstacletower')
-    parser.add_argument('--output-filepath', type=str, default='./buffers/human_replay_buffer')
+    parser.add_argument('--output-filepath', type=str, default='./human_replay/memory_human_replay')
     parser.add_argument('--input-filepath', type=str, default=None)
     parser.add_argument('--episodes', type=int, default=50)
     parser.add_argument('--period', type=int, default=50)
@@ -93,6 +117,7 @@ if __name__ == '__main__':
     parser.add_argument('--save-obs', default=False, action='store_true')
     parser.add_argument('--floor', type=int, default=0)
     parser.add_argument('--concat-dir', type=str, default=None)
+    parser.add_argument('--custom-filepath', type=str, default=None)
     args = parser.parse_args()
     
     #INITIALIZE VARIABLES#
@@ -103,13 +128,18 @@ if __name__ == '__main__':
 
     if args.concat_dir:
         concatenate_memories(args.concat_dir, output_filepath)
+    
+    if args.custom_filepath:
+        custom_memory(args.custom_filepath, output_filepath)
 
     if args.input_filepath:
         print("Loading input buffer file...")
-        input_filepath = args.input_filepath
-        input_buffer_file = open(input_filepath, 'rb')
+        input_buffer_file = open(args.input_filepath, 'rb')
         memory_buffer = pickle.load(input_buffer_file)
         input_buffer_file.close()
+        # for memory in memory_buffer:
+        #     print(memory.actions)
+        #     input()
         print("Input buffer loaded.")
     else:
         memory_buffer = []
@@ -130,7 +160,7 @@ if __name__ == '__main__':
     else:
         #BUILD ENVIRONMENT#
         print("Building environment...")
-        env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True, floor=floor)
+        env = WrappedObstacleTowerEnv(env_filepath, worker_id=0, realtime_mode=True, mobilenet=True, floor=args.floor)
         print("Environment built.")
 
         #INSTANTIATE MEMORY BUFFER#
