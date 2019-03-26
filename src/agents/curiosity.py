@@ -131,9 +131,9 @@ class ActorCriticModel(keras.Model):
             inputs = self.conv_model(inputs)
         # Call our models on the input and return
         actor_logits = self.actor_model(inputs)
-        value = self.critic_model(inputs)
-        prediction = self.curiosity_model(inputs)
-        target = self.target_model(inputs)
+        value = self.critic_model(tf.stop_gradient(inputs))
+        prediction = self.curiosity_model(tf.stop_gradient(inputs)
+        target = self.target_model(tf.stop_gradient(inputs))
 
         return actor_logits, value, prediction, target
 
@@ -164,7 +164,7 @@ class MasterAgent():
                  value_discount=0.25,
                  novelty_discount=0.01,
                  intrinsic_reward_discount=0.01,
-                 boredom_thresh=0,
+                 boredom_thresh=10,
                  update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
@@ -243,8 +243,8 @@ class MasterAgent():
                    checkpoint_period=self.checkpoint_period,
                    visual_period=self.visual_period,
                    memory_path=self.memory_path,
-                   # save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                   save_path=self.save_path) for i in range(1)]
+                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
+                   #save_path=self.save_path) for i in range(1)]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -269,41 +269,41 @@ class MasterAgent():
         data_file.close()
         print("Loaded files")
 
-        counts = [frame for memory in memory_list for frame in memory.actions]
-        counts = [(len(counts) - c) / len(counts) for c in list(Counter(counts).values())]
-        print("Counts: {}".format(counts))
+        counts = np.zeros(self.num_actions)
+        for memory in memory_list:
+            for action in memory.actions:
+                counts[action] += 1
+        counts = [(sum(counts) - c) / sum(counts) for c in counts]
 
         def gen():
-            actions = []
-            states = []
             while True:
                 for memory in memory_list:
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
-                        if len(actions) == batch_size:
-                            weights = [counts[action] for action in actions]
-                            yield actions, states, weights
-                            actions = []
-                            states = []
-                        actions.append(action)
-                        stacked_state = [np.zeros_like(state) if index - i < 0 else memory.states[index - i].numpy()
+                        stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
                         stacked_state = np.concatenate(stacked_state)
-                        states.append(stacked_state)
+                        yield (action, stacked_state)
+
+        dataset = tf.data.Dataset.from_generator(generator=gen,
+                                                 output_types=(tf.float32, tf.float32))
+        dataset = dataset.shuffle(50000).batch(batch_size)
+        generator = iter(dataset)
 
         print("Starting steps...")
-        generator = gen()
         for train_step in range(train_steps):
-            actions, states, weights = next(generator)
+            actions, states  = next(generator)
+            weights = [counts[action] for action in actions]
             with tf.GradientTape() as tape:
                 total_loss = self.compute_loss(actions,
                                                states,
                                                weights,
                                                self.gamma)
-
+        
             # Calculate and apply policy gradients
-            total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
-            self.opt.apply_gradients(zip(total_grads,
-                                             self.global_model.actor_model.trainable_weights))
+            train_weights = self.global_model.actor_model.trainable_weights + \
+                            ([] if self.global_model.conv_model == None else self.global_model.conv_model.trainable_weights)
+            total_grads = tape.gradient(total_loss, train_weights)
+            self.opt.apply_gradients(zip(total_grads, train_weights))
             print("Step: {} | Loss: {}".format(train_step, total_loss))
 
         critic_batch_size = 100
@@ -314,6 +314,9 @@ class MasterAgent():
         os.makedirs(os.path.dirname(_save_path), exist_ok=True)
         self.global_model.save_weights(_save_path)
         print("Checkpoint saved to {}".format(_save_path))
+
+        gc.collect()
+
 
     def compute_loss(self,
                      actions,
@@ -346,8 +349,8 @@ class MasterAgent():
                     distribution = np.zeros(self.num_actions)
                     value = 100
                 else:
-                    stacked_state = [np.zeros_like(state) if step_counter - i < 0
-                                                          else memory.states[step_counter - i].numpy()
+                    stacked_state = [np.random.random(state.shape) if step_counter - i < 0
+                                                          else memory.states[step_counter - i]
                                                           for i in reversed(range(1,self.stack_size))]
                     stacked_state.append(state)
                     stacked_state = np.concatenate(stacked_state)
@@ -481,7 +484,7 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = [np.zeros_like(current_state) if time_count - i < 0
+                    stacked_state = [np.random.random(current_state.state) if time_count - i < 0
                                                                   else mem.states[time_count - i]
                                                                   for i in reversed(range(1, self.stack_size))]
                     stacked_state.append(current_state)
@@ -504,14 +507,16 @@ class Worker(threading.Thread):
                     self.ep_loss += tf.reduce_sum(total_loss)
 
                     # Calculate and apply policy gradients
-                    total_grads = tape.gradient(total_loss,
-                                           self.local_model.actor_model.trainable_weights +
-                                           self.local_model.critic_model.trainable_weights +
-                                           self.local_model.curiosity_model.trainable_weights)
-                    self.opt.apply_gradients(zip(total_grads,
-                                           self.global_model.actor_model.trainable_weights +
-                                           self.global_model.critic_model.trainable_weights +
-                                           self.global_model.curiosity_model.trainable_weights))
+                    train_weights_local = self.local_model.actor_model.trainable_weights + \
+                                    self.local_model.critic_model.trainable_weights + \
+                                    self.local_model.curiosity_model.trainable_weights + \
+                                    ([] if self.conv_size == None else self.local_model.conv_model.trainable_weights)
+                    train_weights_global = self.global_model.actor_model.trainable_weights + \
+                                    self.global_model.critic_model.trainable_weights + \
+                                    self.global_model.curiosity_model.trainable_weights + \
+                                    ([] if self.conv_size == None else self.global_model.conv_model.trainable_weights)
+                    total_grads = tape.gradient(total_loss, train_weights_local)
+                    self.opt.apply_gradients(zip(total_grads, train_weights_global))
 
                     # Update local model with new weights
                     self.local_model.set_weights(self.global_model.get_weights())
@@ -540,7 +545,11 @@ class Worker(threading.Thread):
         if done:
             reward_sum = 0.
         else:
-            reward_sum = self.local_model.critic_model(np.concatenate(memory.states[-self.stack_size:])[None, :])
+            if self.global_model.conv_model != None:
+                _out = self.global_model.conv_model(
+                                tf.convert_to_tensor((np.concatenate(memory.states[-self.stack_size:])[None, :]),
+                                                     dtype=tf.float32))
+            reward_sum = tf.stop_gradient(self.local_model.critic_model(_out))
             reward_sum = np.squeeze(reward_sum.numpy())
 
         # Get discounted rewards
@@ -556,13 +565,13 @@ class Worker(threading.Thread):
                                       for i in reversed(range(self.stack_size))]
             stacked_states.append(np.concatenate(stacked_state))
 
+        
         # Get logits, values, predictions and targets
-        logits, values, predictions, targets = self.local_model(stacked_states)
+        logits, values, predictions, targets = self.local_model(np.array(stacked_states))
 
         # Calculate our novelty
-        novelty = keras.losses.mean_squared_error(predictions, tf.stop_gradient(targets))
-        novelty = tf.math.divide_no_nan(novelty - tf.math.reduce_mean(novelty), tf.math.reduce_std(novelty))
-        print(novelty)
+        novelty = tf.keras.metrics.mean_squared_error(predictions, tf.stop_gradient(targets))
+        #novelty = tf.math.divide_no_nan(novelty - tf.math.reduce_mean(novelty), tf.math.reduce_std(novelty))
 
         # Calculate our advantages
         advantage = np.array(discounted_rewards)[:, None] - values
@@ -570,27 +579,26 @@ class Worker(threading.Thread):
         # Calculate our total reward
         total_reward = advantage + (novelty[:, None] * self.intrinsic_reward_discount)
 
-        # Calculate our entropy loss
-        entropy_loss = keras.losses.categorical_crossentropy(tf.stop_gradient(tf.nn.softmax(logits)),
-                                                             logits,
-                                                             from_logits=True)
-
         # Calculate our policy loss
-        weighted_sparse_crossentropy = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        policy_loss = weighted_sparse_crossentropy(np.array(memory.actions)[:, None],
-                                                   logits,
-                                                   sample_weight=tf.stop_gradient(total_reward))
+        cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+        entropy_loss = cce(tf.stop_gradient(tf.nn.softmax(logits)),
+                           logits)
+        wce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        policy_loss = wce(memory.actions,
+                          logits,
+                          sample_weight=tf.stop_gradient(total_reward))
         policy_loss = policy_loss - (entropy_loss * self.entropy_discount)
 
         # Calculate our value loss
-        value_loss = keras.losses.mean_squared_error(np.array(discounted_rewards)[:, None], values)
+        mse = tf.keras.losses.MeanSquaredError()
+        value_loss = mse(tf.stop_gradient(np.array(discounted_rewards)[:, None]), values)
 
         if save_visual:
             memory.probs.extend(np.squeeze(tf.nn.softmax(logits).numpy()).tolist())
             memory.values.extend(np.squeeze(values.numpy()).tolist())
             memory.novelty.extend(np.squeeze(novelty.numpy()).tolist())
 
-        return policy_loss + (value_loss * self.value_discount) + (novelty * self.novelty_discount)
+        return policy_loss + (value_loss * self.value_discount) + (tf.reduce_mean(novelty) * self.novelty_discount)
 
     def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
         # Save the memory of our episode
