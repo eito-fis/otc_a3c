@@ -229,7 +229,7 @@ class MasterAgent():
             while True:
                 for memory in memory_list:
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
-                        if action > self.num_actions: continue
+                        if action >= self.num_actions: continue
                         stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
                                       for i in reversed(range(self.stack_size))]
                         stacked_state = np.concatenate(stacked_state)
