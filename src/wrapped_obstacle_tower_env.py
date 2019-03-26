@@ -76,7 +76,7 @@ class WrappedObstacleTowerEnv():
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((84, 84), Image.NEAREST)
-        grey_observation = np.mean(np.array(observation),axis=-1,keepdims=True)
+        grey_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
         return grey_observation / 255
     
     def _preprocess_observation(self, observation):
@@ -93,8 +93,9 @@ class WrappedObstacleTowerEnv():
         observation = self._obstacle_tower_env.reset()
         self._done = False
         if self.mobilenet:
-            observation =  self._preprocess_observation(observation)
-            return self.image_module(observation), observation
+            gray_observation = self.gray_process_observation(observation)
+            observation = self._preprocess_observation(observation)
+            return self.image_module(observation), gray_observation
         elif self.gray_scale:
             return (self.grey_process_observation(observation), reward, done, info), observation
         else:
@@ -112,14 +113,21 @@ class WrappedObstacleTowerEnv():
             action = [0, 2, 0, 0]
         elif action == 3: # jump forward
             action = [1, 0, 1, 0]
+        elif action == 5:
+            action = [2, 0, 0, 0]
+        elif action == 6:
+            action = [0, 0, 0, 1]
+        elif action == 7:
+            action = [0, 0, 0, 2]
 
 
         observation, reward, done, info = self._obstacle_tower_env.step(action)
         self._done = done
         
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
+            gray_observation = self.gray_process_observation(observation)
             observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info), observation
+            return (self.image_module(observation), reward, done, info), gray_observation
         elif self.gray_scale:
             return (self.gray_process_observation(observation), reward, done, info), observation
         else:
