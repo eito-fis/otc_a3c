@@ -91,7 +91,7 @@ class ActorCriticModel(keras.Model):
         self.critic_model.build([None] + state_size)
 
         self.dist = ProbabilityDistribution()
-        self.get_action_value(tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
+        self.get_action_value(np.random.random((1,) + tuple(state_size)))
 
     def call(self, inputs):
         actor_logits = self.actor_model(inputs)
