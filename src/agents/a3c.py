@@ -119,7 +119,7 @@ class MasterAgent():
                  sparse_stack_size=0,
                  sparse_update=0,
                  conv_size=None,
-                 learning_rate=0.00042,
+                 learning_rate=0.0000042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
