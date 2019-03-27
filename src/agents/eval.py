@@ -52,12 +52,13 @@ class ActorModel(keras.Model):
                  state_size=None,
                  stack_size=None,
                  sparse_stack_size=None,
+                 action_stack_size=None,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
                  curiosity_fc=None):
         super().__init__()
-        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size)]
+        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size) + (num_actions * action_stack_size)]
 
         # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
@@ -97,6 +98,7 @@ class MasterAgent():
                  state_size=[4],
                  stack_size=6,
                  sparse_stack_size=4,
+                 action_stack_size=4,
                  max_floor=5,
                  boredom_thresh=10,
                  actor_fc=None,
@@ -115,6 +117,7 @@ class MasterAgent():
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.action_stack_size = action_stack_size
         self.actor_fc = actor_fc
 
         self.boredom_thresh = boredom_thresh
@@ -124,6 +127,7 @@ class MasterAgent():
                                        state_size=self.state_size,
                                        stack_size=self.stack_size,
                                        sparse_stack_size=sparse_stack_size,
+                                       action_stack_size=self.action_stack_size,
                                        actor_fc=self.actor_fc)
         if load_path != None:
             self.global_model.load_weights(load_path, by_name=True)
@@ -237,10 +241,15 @@ class Worker(threading.Thread):
             done = False
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
+            prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
             boredom_actions = []
             passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
+                if time_count > 0:
+                    one_hot_action = np.zeros(self.num_actions)
+                    one_hot_action[action] = 1
+                    prev_actions = prev_actions[1:] + [one_hot_action]
                 if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
@@ -248,7 +257,7 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([range(self.num_actions)]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = np.concatenate(prev_states + sparse_states)
+                    stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
                     action = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)

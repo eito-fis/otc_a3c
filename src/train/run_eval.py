@@ -36,6 +36,7 @@ def main(args,
          num_actions=3,
          stack_size=4,
          sparse_stack_size=0,
+         action_stack_size=0,
          max_floor=5,
          state_size=[1280]):
     realtime_mode = args.render
@@ -54,6 +55,7 @@ def main(args,
                                env_func=env_func,
                                stack_size=stack_size,
                                sparse_stack_size=sparse_stack_size,
+                               action_stack_size=action_stack_size,
                                actor_fc=actor_fc,
                                memory_path=args.memory_dir,
                                load_path=args.restore)
