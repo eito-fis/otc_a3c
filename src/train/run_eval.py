@@ -17,7 +17,7 @@ import gin
 import logging
 import argparse
 
-from src.agents.a3c import MasterAgent, Memory
+from src.agents.eval import MasterAgent, Memory
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 
 import gym
@@ -32,21 +32,11 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=500,
-         num_episodes=1000,
-         log_period=5,
-         save_period=10,
-         visual_period=1,
+         train_steps=500,
          actor_fc=(1024, 512),
-         critic_fc=(1024, 512),
          num_actions=3,
          stack_size=4,
-         sparse_stack_size=4,
-         sparse_update=5,
-         state_size=[1280],
-         batch_size=1000,
-         conv_size=None,
-         realtime_mode=True):
+         state_size=[1280]):
     realtime_mode = args.render
 
     def env_func(idx):
@@ -56,68 +46,33 @@ def main(args,
                                        gray_scale=args.gray,
                                        realtime_mode=realtime_mode)
 
-    log_dir = os.path.join(args.output_dir, "log")
-    save_dir = os.path.join(args.output_dir, "checkpoints")
-    summary_writer = tf.summary.create_file_writer(log_dir)
-
-    master_agent = MasterAgent(num_episodes=num_episodes,
+    master_agent = MasterAgent(train_steps=train_steps,
                                num_actions=num_actions,
                                state_size=state_size,
-                               conv_size=conv_size,
                                env_func=env_func,
                                stack_size=stack_size,
-                               sparse_stack_size=sparse_stack_size,
-                               sparse_update=sparse_update,
                                actor_fc=actor_fc,
-                               critic_fc=critic_fc,
-                               summary_writer=summary_writer,
-                               save_path=save_dir,
                                memory_path=args.memory_dir,
-                               visual_period=visual_period,
                                load_path=args.restore)
 
-    if args.eval:
-        reached_floors = []
-        print("Starting evaluation...")
-        env = env_func(0)
-        for _ in range(100):
-            reached_floors.append(master_agent.play(env))
-            floors_hist = np.histogram(reached_floors, 5, (0,5))
-            print(floors_hist)
-        plt.hist(reached_floors, 5, (0,5))
-        plt.show()
-        print("Evaluation done!")
-    else:
-        if args.human_input != None:
-            print("Starting train on human input...")
-            master_agent.human_train(args.human_input, initial_train_steps, batch_size)
-            print("Train done!")
-
-        print("Starting train...")
-        master_agent.distributed_train()
-        print("Train done!")
+    print("Starting evaluation...")
+    master_agent.distributed_eval()
+    print("Train done!")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('slideshow rl')
+    parser = argparse.ArgumentParser('OTC Eval')
     # Input data arguments
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='data')
     parser.add_argument(
         '--env-filename',
         type=str,
         default='../ObstacleTower/obstacletower')
-    parser.add_argument(
-        '--human-input',
-        type=str,
-        default=None)
     parser.add_argument(
         '--memory-dir',
         type=str,
         default=None)
     parser.add_argument(
         '--restore',
+        required=True,
         type=str,
         default=None)
     parser.add_argument(
@@ -125,15 +80,7 @@ if __name__ == '__main__':
         type=str,
         default='/tmp/slideshow_rl')
     parser.add_argument(
-        '--n-epoch',
-        type=int,
-        default=1000)
-    parser.add_argument(
         '--render',
-        default=False,
-        action='store_true')
-    parser.add_argument(
-        '--eval',
         default=False,
         action='store_true')
     parser.add_argument(
