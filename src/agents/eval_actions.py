@@ -57,7 +57,7 @@ class ActorModel(keras.Model):
                  critic_fc=None,
                  curiosity_fc=None):
         super().__init__()
-        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size)]
+        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size) + (num_actions * state_size)]
 
         # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
@@ -237,18 +237,23 @@ class Worker(threading.Thread):
             done = False
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
+            prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
             boredom_actions = []
             passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
+                if time_count > 0:
+                    one_hot_action = np.zeros(self.num_actions)
+                    one_hot_action[action] = 1
+                    prev_actions = prev_actions[1:] + [one_hot_action]
                 if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
-                    possible_actions = np.delete(np.array([range(self.num_actions)]), action)
+                    possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = np.concatenate(prev_states + sparse_states)
+                    stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
                     action = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
