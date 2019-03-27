@@ -34,8 +34,9 @@ def main(args,
          train_steps=500,
          actor_fc=(1024, 512),
          num_actions=3,
-         stack_size=6,
-         sparse_stack_size=4,
+         stack_size=4,
+         sparse_stack_size=0,
+         max_floor=5,
          state_size=[1280]):
     realtime_mode = args.render
 
@@ -48,6 +49,7 @@ def main(args,
 
     master_agent = MasterAgent(train_steps=train_steps,
                                num_actions=num_actions,
+                               max_floor=max_floor,
                                state_size=state_size,
                                env_func=env_func,
                                stack_size=stack_size,
