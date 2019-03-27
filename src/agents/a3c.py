@@ -322,8 +322,6 @@ class MasterAgent():
         memory = Memory()
         floor = 0
 
-        indices = [0, 1, 2]
-        depth = 3
         try:
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
@@ -340,7 +338,7 @@ class MasterAgent():
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if step_counter > 10 and _deviation < self.boredom_thresh:
-                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    possible_actions = np.delete(np.array(range(self.num_actions)), action)
                     action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
                 else:
@@ -485,7 +483,7 @@ class Worker(threading.Thread):
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
-                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    possible_actions = np.delete(np.array(range(self.num_actions)), action)
                     action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
                 else:
