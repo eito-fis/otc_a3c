@@ -29,13 +29,13 @@ from tensorflow import keras
 # import time
 # import matplotlib
 # matplotlib.use('PS')
-import matplotlib.pyplot as plt
 
 def main(args,
          train_steps=500,
          actor_fc=(1024, 512),
          num_actions=3,
-         stack_size=4,
+         stack_size=6,
+         sparse_stack_size=4,
          state_size=[1280]):
     realtime_mode = args.render
 
@@ -51,6 +51,7 @@ def main(args,
                                state_size=state_size,
                                env_func=env_func,
                                stack_size=stack_size,
+                               sparse_stack_size=sparse_stack_size,
                                actor_fc=actor_fc,
                                memory_path=args.memory_dir,
                                load_path=args.restore)
