@@ -135,3 +135,6 @@ class WrappedObstacleTowerEnv():
 
     def close(self):
         self._obstacle_tower_env.close()
+
+    def floor(self, floor):
+        self._obstacle_tower_env.floor(floor)
