@@ -116,8 +116,8 @@ class MasterAgent():
                  num_actions=3,
                  state_size=[4],
                  stack_size=4,
-                 sparse_stack_size=4,
-                 sparse_update=5,
+                 sparse_stack_size=0,
+                 sparse_update=0,
                  conv_size=None,
                  learning_rate=0.00042,
                  gamma=0.99,
@@ -218,7 +218,6 @@ class MasterAgent():
                 break
         [w.join() for w in workers]
         print("Done!")
-        self.play()
         return moving_average_rewards
 
     def human_train(self, data_path, train_steps, batch_size):
@@ -323,15 +322,14 @@ class MasterAgent():
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
             prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
-            boredom_actions = []
             while not done:
                 prev_states = prev_states[1:] + [state]
                 if step_counter > 0:
                     one_hot_action = np.zeros(self.num_actions)
                     one_hot_action[action] = 1
                     prev_actions = prev_actions[1:] + [one_hot_action]
-                print("prev_actions: {}".format(prev_actions))
-                input()
+                # print("prev_actions: {}".format(prev_actions))
+                # input()
                 if self.sparse_stack_size > 0 and step_counter % self.sparse_update == 0:
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
@@ -339,9 +337,6 @@ class MasterAgent():
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
-                    boredom_actions = [action] + [1] * 20 # queue rotate 360 + random action
-                if len(boredom_actions):
-                    action = boredom_actions.pop()
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
                     logits = self.global_model.actor_model(stacked_state[None, :])
@@ -472,7 +467,6 @@ class Worker(threading.Thread):
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
             prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
-            boredom_actions = []
             while not done:
                 prev_states = prev_states[1:] + [state]
                 if time_count > 0:
@@ -486,9 +480,6 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
-                    boredom_actions = [action] + [1] * 20 # queue rotate 360 + random action
-                if len(boredom_actions):
-                    action = boredom_actions.pop()
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
