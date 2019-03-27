@@ -141,6 +141,7 @@ class MasterAgent():
                    state_size=self.state_size,
                    stack_size=self.stack_size,
                    sparse_stack_size=self.sparse_stack_size,
+                   action_stack_size=self.action_stack_size,
                    actor_fc=self.actor_fc,
                    boredom_thresh=self.boredom_thresh,
                    global_model=self.global_model,
@@ -188,6 +189,7 @@ class Worker(threading.Thread):
                  state_size=[4],
                  stack_size=None,
                  sparse_stack_size=None,
+                 action_stack_size=None,
                  actor_fc=None,
                  boredom_thresh=None,
                  global_model=None,
@@ -201,6 +203,7 @@ class Worker(threading.Thread):
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.action_stack_size = action_stack_size
         self.max_floor = max_floor
 
         self.global_model = global_model
@@ -208,6 +211,7 @@ class Worker(threading.Thread):
                                             state_size=self.state_size,
                                             stack_size=self.stack_size,
                                             sparse_stack_size=self.sparse_stack_size,
+                                            action_stack_size=self.action_stack_size,
                                             actor_fc=actor_fc)
         self.local_model.set_weights(self.global_model.get_weights())
 
@@ -246,7 +250,7 @@ class Worker(threading.Thread):
             passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
-                if time_count > 0:
+                if time_count > 0 and self.action_stack_size > 0:
                     one_hot_action = np.zeros(self.num_actions)
                     one_hot_action[action] = 1
                     prev_actions = prev_actions[1:] + [one_hot_action]
