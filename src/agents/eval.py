@@ -58,7 +58,7 @@ class ActorModel(keras.Model):
                  curiosity_fc=None):
         super().__init__()
         state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size)]
-        
+
         # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
 
@@ -151,19 +151,21 @@ class MasterAgent():
             print("Starting worker {}".format(i))
             worker.start()
 
-        all_floors = [0 for _ in range(self.max_floor)]
+        all_floors = np.array([[0,0] for _ in range(self.max_floor)]
         while True:
             data = res_queue.get()
             if data is not None:
-                all_floors[data] += 1
-                print("Floor histogram: {}".format(all_floors))
+                floor, passed = data
+
+                all_floors[floor,passed] += 1
+                print("Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
             else:
                 break
         [w.join() for w in workers]
         print("Done!")
-        floors_hist = np.histogram(all_floors, 10, (0,10))
-        print("Final Floor histogram: {}".format(floors_hist[0]))
-        return all_floors 
+        # floors_hist = np.histogram(all_floors, 10, (0,10))
+        print("Final Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+        return all_floors
 
 class Worker(threading.Thread):
     # Set up global variables across different threads
@@ -234,6 +236,7 @@ class Worker(threading.Thread):
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
             boredom_actions = []
+            passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
                 if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
@@ -250,8 +253,8 @@ class Worker(threading.Thread):
 
                 total_reward += reward
                 mem.store(state, action, reward)
-                if reward == 1: 
-                    self.result_queue.put(floor)
+                if reward == 1:
+                    passed = True
                     break
 
                 time_count += 1
@@ -259,4 +262,9 @@ class Worker(threading.Thread):
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
             print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
+            if passed:
+                self.result_queue.put((floor,0))
+            else:
+                self.result_queue.put((floor,1))
+
         self.result_queue.put(None)
