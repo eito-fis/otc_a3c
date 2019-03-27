@@ -73,11 +73,12 @@ class ActorCriticModel(keras.Model):
                  num_actions=None,
                  state_size=None,
                  stack_size=None,
+                 sparse_stack_size=None,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None):
         super().__init__()
-        state_size = state_size[:-1] + [state_size[-1] * stack_size]
+        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size)]
 
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
@@ -115,13 +116,15 @@ class MasterAgent():
                  num_actions=2,
                  state_size=[4],
                  stack_size=4,
+                 sparse_stack_size=4,
+                 sparse_update=5,
                  conv_size=None,
-                 learning_rate=0.00042,
+                 learning_rate=0.0000042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=650,
+                 update_freq=5,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -145,6 +148,9 @@ class MasterAgent():
         self.num_actions = num_actions
         self.state_size = state_size
         self.stack_size = stack_size
+        self.sparse_stack_size = sparse_stack_size
+        self.update_freq = update_freq
+        self.sparse_update = sparse_update
         self.conv_size = conv_size
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
@@ -161,6 +167,7 @@ class MasterAgent():
         self.global_model = ActorCriticModel(num_actions=self.num_actions,
                                              state_size=self.state_size,
                                              stack_size=self.stack_size,
+                                             sparse_stack_size=self.sparse_stack_size,
                                              conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
                                              critic_fc=self.critic_fc)
@@ -175,6 +182,8 @@ class MasterAgent():
                    num_actions=self.num_actions,
                    state_size=self.state_size,
                    stack_size=self.stack_size,
+                   sparse_stack_size=self.sparse_stack_size,
+                   sparse_update=self.sparse_update,
                    conv_size=self.conv_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
@@ -228,11 +237,14 @@ class MasterAgent():
         def gen():
             while True:
                 for memory in memory_list:
+                    prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
+                    sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
-                        stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
-                                      for i in reversed(range(self.stack_size))]
-                        stacked_state = np.concatenate(stacked_state)
+                        prev_states = prev_states[1:] + [state]
+                        if index % self.sparse_update == 0:
+                            sparse_states = sparse_states[1:] + [state]
+                        stacked_state = np.concatenate(prev_states + sparse_states)
                         yield (action, stacked_state)
 
         dataset = tf.data.Dataset.from_generator(generator=gen,
@@ -301,22 +313,24 @@ class MasterAgent():
         memory = Memory()
         floor = 0
 
-        prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
         try:
+            prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
+            sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
             boredom_actions = []
             while not done:
+                prev_states = prev_states[1:] + [state]
+                if step_counter % self.sparse_update == 0:
+                    sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if step_counter > 10 and _deviation < self.boredom_thresh:
-                    # possible_actions = np.delete(np.array([0, 1, 2]), action)
-                    # action = np.random.choice(possible_actions)
+                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
-                    boredom_actions = [1] * 4
-                if boredom_actions:
+                    boredom_actions = [1] * 20 + [action] # queue rotate 360 + random action
+                if len(boredom_actions):
                     action = boredom_actions.pop()
-                    [env.step(action) for _ in range(4)]
                 else:
-                    prev_states = prev_states[1:] + [state]
-                    stacked_state = np.concatenate(prev_states)
+                    stacked_state = np.concatenate(prev_states + sparse_states)
                     logits = self.global_model.actor_model(stacked_state[None, :])
                     distribution = tf.squeeze(tf.nn.softmax(logits)).numpy()
                     action = np.argmax(logits)
@@ -358,6 +372,8 @@ class Worker(threading.Thread):
                  num_actions=2,
                  state_size=[4],
                  stack_size=None,
+                 sparse_stack_size=None,
+                 sparse_update=None,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
@@ -381,6 +397,8 @@ class Worker(threading.Thread):
         self.num_actions = num_actions
         self.state_size = state_size
         self.stack_size = stack_size
+        self.sparse_stack_size = sparse_stack_size
+        self.sparse_update = sparse_update
         self.conv_size = conv_size
 
         self.opt = opt
@@ -388,6 +406,7 @@ class Worker(threading.Thread):
         self.local_model = ActorCriticModel(num_actions=self.num_actions,
                                             state_size=self.state_size,
                                             stack_size=stack_size,
+                                            sparse_stack_size=self.sparse_stack_size,
                                             conv_size=self.conv_size,
                                             actor_fc=actor_fc,
                                             critic_fc=critic_fc)
@@ -424,8 +443,8 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            current_state, obs = self.env.reset()
-            rolling_average_state = current_state
+            state, obs = self.env.reset()
+            rolling_average_state = state
             mem.clear()
             ep_reward = 0.
             ep_steps = 0
@@ -436,26 +455,29 @@ class Worker(threading.Thread):
             action = 0
             time_count = 0
             done = False
-            prev_states = [np.random.random(current_state.shape) for _ in range(self.stack_size)]
+
+            prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
+            sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
             boredom_actions = []
             while not done:
-                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, current_state))
+                prev_states = prev_states[1:] + [state]
+                if time_count % self.sparse_update == 0:
+                    sparse_states = sparse_states[1:] + [state]
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     # possible_actions = np.delete(np.array([0, 1, 2]), action)
                     # action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
-                    boredom_actions = [1] * 4
+                    boredom_actions = [1] * 20 # queue rotate 360
                 if len(boredom_actions):
                     action = boredom_actions.pop()
-                    [self.env.step(action) for _ in range(4)]
                 else:
-                    prev_states = prev_states[1:] + [current_state]
-                    stacked_state = np.concatenate(prev_states)
+                    stacked_state = np.concatenate(prev_states + sparse_states)
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
-                mem.store(current_state, action, reward)
+                mem.store(state, action, reward)
                 if save_visual:
                     mem.obs.append(obs)
 
@@ -465,7 +487,7 @@ class Worker(threading.Thread):
 
                     # Update model
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual)
+                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state)
                     self.ep_loss += total_loss
 
                     # Calculate and apply policy gradients
@@ -485,7 +507,7 @@ class Worker(threading.Thread):
                 else:
                     ep_steps += 1
                     time_count += 1
-                    current_state = new_state
+                    state = new_state
                     rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                     obs = new_obs
                     total_step += 1
@@ -495,13 +517,14 @@ class Worker(threading.Thread):
                      memory,
                      done,
                      gamma,
-                     save_visual):
+                     save_visual,
+                     stacked_state):
         # If not done, estimate the future discount reward of being in the final state
         # using the critic model
         if done:
             reward_sum = 0.
         else:
-            reward_sum = self.local_model.critic_model(np.concatenate(memory.states[-self.stack_size:])[None, :])
+            reward_sum = self.local_model.critic_model(stacked_state[None, :])
             reward_sum = np.squeeze(reward_sum.numpy())
 
         # Get discounted rewards
@@ -512,10 +535,13 @@ class Worker(threading.Thread):
         discounted_rewards.reverse()
 
         stacked_states = []
+        prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
+        sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
         for index, state in enumerate(memory.states):
-            stacked_state = [np.random.random(state.shape) if index - i < 0 else memory.states[index - i].numpy()
-                                      for i in reversed(range(self.stack_size))]
-            stacked_states.append(np.concatenate(stacked_state))
+            prev_states = prev_states[1:] + [state]
+            if index % self.sparse_update == 0:
+                sparse_states = sparse_states[1:] + [state]
+            stacked_states.append(np.concatenate(prev_states + sparse_states))
 
         # Get logits and values
         logits, values = self.local_model(np.array(stacked_states))
