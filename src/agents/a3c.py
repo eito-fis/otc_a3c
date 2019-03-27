@@ -73,12 +73,13 @@ class ActorCriticModel(keras.Model):
                  num_actions=None,
                  state_size=None,
                  stack_size=None,
-                 sparse_stack_size=None,
+                 sparse_stack_size=0,
+                 action_stack_size=0,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None):
         super().__init__()
-        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size) + (num_actions * stack_size)]
+        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size) + (num_actions * action_stack_size)]
 
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
@@ -118,6 +119,7 @@ class MasterAgent():
                  stack_size=4,
                  sparse_stack_size=0,
                  sparse_update=0,
+                 action_stack_size=4,
                  conv_size=None,
                  learning_rate=0.0000042,
                  gamma=0.99,
@@ -149,6 +151,7 @@ class MasterAgent():
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.action_stack_size = action_stack_size
         self.update_freq = update_freq
         self.sparse_update = sparse_update
         self.conv_size = conv_size
@@ -168,6 +171,7 @@ class MasterAgent():
                                              state_size=self.state_size,
                                              stack_size=self.stack_size,
                                              sparse_stack_size=self.sparse_stack_size,
+                                             action_stack_size=self.action_stack_size,
                                              conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
                                              critic_fc=self.critic_fc)
@@ -184,6 +188,7 @@ class MasterAgent():
                    stack_size=self.stack_size,
                    sparse_stack_size=self.sparse_stack_size,
                    sparse_update=self.sparse_update,
+                   action_stack_size=self.action_stack_size,
                    conv_size=self.conv_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
@@ -238,13 +243,14 @@ class MasterAgent():
                 for memory in memory_list:
                     prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
                     sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
-                    prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
+                    prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
-                        prev_states = prev_states[1:] + [state]
-                        one_hot_action = np.zeros(self.num_actions)
-                        one_hot_action[action] = 1
-                        prev_actions = prev_actions[1:] + [one_hot_action]
+                        if self.action_stack_size > 0:
+                            prev_states = prev_states[1:] + [state]
+                            one_hot_action = np.zeros(self.num_actions)
+                            one_hot_action[action] = 1
+                            prev_actions = prev_actions[1:] + [one_hot_action]
                         if self.sparse_stack_size > 0 and index % self.sparse_update == 0:
                             sparse_states = sparse_states[1:] + [state]
                         stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
@@ -321,10 +327,10 @@ class MasterAgent():
         try:
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
-            prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
+            prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
             while not done:
                 prev_states = prev_states[1:] + [state]
-                if step_counter > 0:
+                if self.action_stack_size > 0 and step_counter > 0:
                     one_hot_action = np.zeros(self.num_actions)
                     one_hot_action[action] = 1
                     prev_actions = prev_actions[1:] + [one_hot_action]
@@ -382,6 +388,7 @@ class Worker(threading.Thread):
                  stack_size=None,
                  sparse_stack_size=None,
                  sparse_update=None,
+                 action_stack_size=None,
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
@@ -406,6 +413,7 @@ class Worker(threading.Thread):
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.action_stack_size = action_stack_size
         self.sparse_update = sparse_update
         self.conv_size = conv_size
 
@@ -466,10 +474,10 @@ class Worker(threading.Thread):
 
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
-            prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
+            prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
             while not done:
                 prev_states = prev_states[1:] + [state]
-                if time_count > 0:
+                if self.action_stack_size > 0 and time_count > 0:
                     one_hot_action = np.zeros(self.num_actions)
                     one_hot_action[action] = 1
                     prev_actions = prev_actions[1:] + [one_hot_action]
@@ -546,12 +554,13 @@ class Worker(threading.Thread):
         stacked_states = []
         prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
         sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
-        prev_actions = [np.zeros(self.num_actions) for _ in range(self.stack_size)]
+        prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
         for index, (state, action) in enumerate(zip(memory.states, memory.actions)):
-            prev_states = prev_states[1:] + [state]
-            one_hot_action = np.zeros(self.num_actions)
-            one_hot_action[action] = 1
-            prev_actions = prev_actions[1:] + [one_hot_action]
+            if self.action_stack_size > 0:
+                prev_states = prev_states[1:] + [state]
+                one_hot_action = np.zeros(self.num_actions)
+                one_hot_action[action] = 1
+                prev_actions = prev_actions[1:] + [one_hot_action]
             if self.sparse_stack_size > 0 and index % self.sparse_update == 0:
                 sparse_states = sparse_states[1:] + [state]
             stacked_states.append(np.concatenate(prev_states + sparse_states + prev_actions))
