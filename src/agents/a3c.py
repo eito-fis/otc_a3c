@@ -124,7 +124,7 @@ class MasterAgent():
                  entropy_discount=0.05,
                  value_discount=0.1,
                  boredom_thresh=10,
-                 update_freq=5,
+                 update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
                  summary_writer=None,
@@ -242,7 +242,7 @@ class MasterAgent():
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
                         prev_states = prev_states[1:] + [state]
-                        if index % self.sparse_update == 0:
+                        if self.sparse_stack_size > 0 and index % self.sparse_update == 0:
                             sparse_states = sparse_states[1:] + [state]
                         stacked_state = np.concatenate(prev_states + sparse_states)
                         yield (action, stacked_state)
@@ -319,14 +319,14 @@ class MasterAgent():
             boredom_actions = []
             while not done:
                 prev_states = prev_states[1:] + [state]
-                if step_counter % self.sparse_update == 0:
+                if self.sparse_stack_size > 0 and step_counter % self.sparse_update == 0:
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if step_counter > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
-                    boredom_actions = [1] * 20 + [action] # queue rotate 360 + random action
+                    boredom_actions = [action] + [1] * 20 # queue rotate 360 + random action
                 if len(boredom_actions):
                     action = boredom_actions.pop()
                 else:
@@ -461,14 +461,14 @@ class Worker(threading.Thread):
             boredom_actions = []
             while not done:
                 prev_states = prev_states[1:] + [state]
-                if time_count % self.sparse_update == 0:
+                if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
-                    # possible_actions = np.delete(np.array([0, 1, 2]), action)
-                    # action = np.random.choice(possible_actions)
+                    possible_actions = np.delete(np.array([0, 1, 2]), action)
+                    action = np.random.choice(possible_actions)
                     # distribution = np.zeros(self.num_actions)
-                    boredom_actions = [1] * 20 # queue rotate 360
+                    boredom_actions = [action] + [1] * 20 # queue rotate 360 + random action
                 if len(boredom_actions):
                     action = boredom_actions.pop()
                 else:
@@ -539,7 +539,7 @@ class Worker(threading.Thread):
         sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
         for index, state in enumerate(memory.states):
             prev_states = prev_states[1:] + [state]
-            if index % self.sparse_update == 0:
+            if self.sparse_stack_size > 0 and index % self.sparse_update == 0:
                 sparse_states = sparse_states[1:] + [state]
             stacked_states.append(np.concatenate(prev_states + sparse_states))
 
