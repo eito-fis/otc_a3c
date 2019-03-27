@@ -16,6 +16,7 @@ import tensorflow_hub as hub
 from tensorflow import keras
 
 from collections import Counter
+import gc
 
 def record(episode,
            episode_reward,
@@ -135,9 +136,9 @@ class MasterAgent():
                  env_func=None,
                  num_actions=2,
                  state_size=[4],
-                 stack_size=4,
+                 stack_size=10,
                  conv_size=None,
-                 learning_rate=0.000001,
+                 learning_rate=0.00001,
                  gamma=0.99,
                  entropy_discount=0.01,
                  value_discount=0.3,
@@ -149,8 +150,8 @@ class MasterAgent():
                  critic_fc=None,
                  curiosity_fc=None,
                  summary_writer=None,
-                 log_period=10,
-                 checkpoint_period=10,
+                 log_period=50,
+                 checkpoint_period=50,
                  visual_period=None,
                  memory_path="/tmp/a3c/visuals",
                  save_path="/tmp/a3c",
