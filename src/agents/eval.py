@@ -58,7 +58,7 @@ class ActorModel(keras.Model):
                  curiosity_fc=None):
         super().__init__()
         state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size)]
-        
+
         # Build fully connected layers for our models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
 
@@ -97,6 +97,7 @@ class MasterAgent():
                  state_size=[4],
                  stack_size=6,
                  sparse_stack_size=4,
+                 max_floor=5,
                  boredom_thresh=10,
                  actor_fc=None,
                  memory_path="/tmp/a3c/visuals",
@@ -105,6 +106,7 @@ class MasterAgent():
 
         self.memory_path = memory_path
         self.save_path = save_path
+        self.max_floor = max_floor
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
@@ -131,6 +133,7 @@ class MasterAgent():
 
         workers = [Worker(idx=i,
                    num_actions=self.num_actions,
+                   max_floor=self.max_floor,
                    state_size=self.state_size,
                    stack_size=self.stack_size,
                    sparse_stack_size=self.sparse_stack_size,
@@ -148,26 +151,23 @@ class MasterAgent():
             print("Starting worker {}".format(i))
             worker.start()
 
-        all_floors = []
-        all_rewards = []
+        all_floors = np.array([[0,0] for _ in range(self.max_floor)])
         while True:
             data = res_queue.get()
             if data is not None:
-                floor = data[0]
-                total_reward = data[1]
-                all_floors.append(floor)
-                all_rewards.append(total_reward)
-                floors_hist = np.histogram(all_floors, 10, (0,10))
-                print("Floor histogram: {}".format(floors_hist[0]))
-                print("Average reward: {}".format(sum(all_rewards) / len(all_rewards)))
+                floor, passed = data
+
+                all_floors[floor,passed] += 1
+                print("Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+                print("Floors overall: {}".format([p + not_p for p, not_p in all_floors]))
             else:
                 break
         [w.join() for w in workers]
         print("Done!")
-        floors_hist = np.histogram(all_floors, 10, (0,10))
-        print("Final Floor histogram: {}".format(floors_hist[0]))
-        print("Final Average reward: {}".format(sum(all_rewards) / len(all_rewards)))
-        return all_floors, all_rewards
+        # floors_hist = np.histogram(all_floors, 10, (0,10))
+        print("Final Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+        print("Final floors overall: {}".format([p + not_p for p, not_p in all_floors]))
+        return all_floors
 
 class Worker(threading.Thread):
     # Set up global variables across different threads
@@ -180,6 +180,7 @@ class Worker(threading.Thread):
     def __init__(self,
                  idx=0,
                  num_actions=2,
+                 max_floor=None,
                  state_size=[4],
                  stack_size=None,
                  sparse_stack_size=None,
@@ -196,6 +197,7 @@ class Worker(threading.Thread):
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.max_floor = max_floor
 
         self.global_model = global_model
         self.local_model = ActorModel(num_actions=self.num_actions,
@@ -223,18 +225,20 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            current_state, obs = self.env.reset()
-            rolling_average_state = current_state
+            floor = np.random.randint(0, self.max_floor)
+            self.env.floor(floor)
+            state, obs = self.env.reset()
+            rolling_average_state = state
             mem.clear()
             current_episode = Worker.global_episode
 
             time_count = 0
-            floor = 0
             total_reward = 0
             done = False
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
             boredom_actions = []
+            passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
                 if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
@@ -243,23 +247,26 @@ class Worker(threading.Thread):
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([0, 1, 2]), action)
                     action = np.random.choice(possible_actions)
-                    boredom_actions = [action] + [1] * 20
-                if len(boredom_actions):
-                    action = boredom_actions.pop()
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states)
                     action = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
-                if reward == 1: floor += 1
                 total_reward += reward
-                mem.store(current_state, action, reward)
+                mem.store(state, action, reward)
+                if reward == 1:
+                    passed = True
+                    break
 
                 time_count += 1
-                current_state = new_state
+                state = new_state
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
             print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
-            self.result_queue.put((floor, total_reward))
+            if passed:
+                self.result_queue.put((floor,0))
+            else:
+                self.result_queue.put((floor,1))
+
         self.result_queue.put(None)
