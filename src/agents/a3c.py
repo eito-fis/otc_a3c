@@ -113,13 +113,13 @@ class MasterAgent():
     def __init__(self,
                  num_episodes=1000,
                  env_func=None,
-                 num_actions=2,
+                 num_actions=3,
                  state_size=[4],
                  stack_size=4,
                  sparse_stack_size=4,
                  sparse_update=5,
                  conv_size=None,
-                 learning_rate=0.0000042,
+                 learning_rate=0.00042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
@@ -298,7 +298,7 @@ class MasterAgent():
 
     def initialize_critic_model(self, batch_size, critic_steps):
         random_states = np.random.random((batch_size,) + tuple(self.state_size[:-1] +
-                                                            [self.state_size[-1] * self.stack_size]))
+                                                            [self.state_size[-1] * self.stack_size + (self.num_actions * self.stack_size)]))
         zero_rewards = np.zeros(batch_size)
         for critic_step in range(critic_steps):
             with tf.GradientTape() as tape:
