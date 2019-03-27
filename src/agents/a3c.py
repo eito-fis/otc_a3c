@@ -554,7 +554,7 @@ class Worker(threading.Thread):
             prev_actions = prev_actions[1:] + [one_hot_action]
             if self.sparse_stack_size > 0 and index % self.sparse_update == 0:
                 sparse_states = sparse_states[1:] + [state]
-            stacked_states.append(np.concatenate(prev_states + sparse_states))
+            stacked_states.append(np.concatenate(prev_states + sparse_states + prev_actions))
 
         # Get logits and values
         logits, values = self.local_model(np.array(stacked_states))

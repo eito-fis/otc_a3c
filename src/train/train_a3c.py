@@ -32,15 +32,15 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=1000,
-         num_episodes=1000,
+         initial_train_steps=2500,
+         num_episodes=10000,
          log_period=5,
          save_period=10,
          visual_period=1,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
          num_actions=3,
-         stack_size=4,
+         stack_size=10,
          sparse_stack_size=0,
          sparse_update=5,
          state_size=[1280],
