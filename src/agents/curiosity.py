@@ -16,6 +16,7 @@ import tensorflow_hub as hub
 from tensorflow import keras
 
 from collections import Counter
+import gc
 
 def record(episode,
            episode_reward,
