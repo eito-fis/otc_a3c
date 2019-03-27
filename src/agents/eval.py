@@ -151,7 +151,7 @@ class MasterAgent():
             print("Starting worker {}".format(i))
             worker.start()
 
-        all_floors = np.array([[0,0] for _ in range(self.max_floor)]
+        all_floors = np.array([[0,0] for _ in range(self.max_floor)])
         while True:
             data = res_queue.get()
             if data is not None:
