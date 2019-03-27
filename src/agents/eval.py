@@ -159,12 +159,14 @@ class MasterAgent():
 
                 all_floors[floor,passed] += 1
                 print("Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+                print("Floors overall: {}".format([p + not_p for p, not_p in all_floors]))
             else:
                 break
         [w.join() for w in workers]
         print("Done!")
         # floors_hist = np.histogram(all_floors, 10, (0,10))
         print("Final Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+        print("Final floors overall: {}".format([p + not_p for p, not_p in all_floors]))
         return all_floors
 
 class Worker(threading.Thread):
