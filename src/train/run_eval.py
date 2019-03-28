@@ -53,6 +53,7 @@ def main(args,
                                max_floor=max_floor,
                                state_size=state_size,
                                env_func=env_func,
+                               curiosity=args.curiosity,
                                stack_size=stack_size,
                                sparse_stack_size=sparse_stack_size,
                                action_stack_size=action_stack_size,
@@ -94,6 +95,10 @@ if __name__ == '__main__':
         action='store_true')
     parser.add_argument(
         '--mobilenet',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--curiosity',
         default=False,
         action='store_true')
     args = parser.parse_args()
