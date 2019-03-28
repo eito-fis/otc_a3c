@@ -78,7 +78,10 @@ def concatenate_memories(memories_dir, output_filepath):
         mem_file = open(memory_filepath, 'rb')
         memory = pickle.load(mem_file)
         mem_file.close()
-        complete_memory = complete_memory + memory
+        if type(memory) == type([]):
+            complete_memory = complete_memory + memory
+        else:
+            complete_memory = complete_memory + [memory]
     output_file = open(output_filepath, 'wb+')
     pickle.dump(complete_memory, output_file)
     output_file.close()
@@ -91,7 +94,7 @@ def custom_memory(custom_filepath, output_filepath):
     input_buffer_file = open(input_filepath, 'rb')
     memory_buffer = pickle.load(input_buffer_file)
     input_buffer_file.close()
-    
+
     custom_memories = []
     for memory in memory_buffer:
         for i in range(len(memory.actions)):
@@ -119,7 +122,7 @@ if __name__ == '__main__':
     parser.add_argument('--concat-dir', type=str, default=None)
     parser.add_argument('--custom-filepath', type=str, default=None)
     args = parser.parse_args()
-    
+
     #INITIALIZE VARIABLES#
     env_filepath = args.env_filepath
     output_filepath = args.output_filepath
@@ -128,7 +131,7 @@ if __name__ == '__main__':
 
     if args.concat_dir:
         concatenate_memories(args.concat_dir, output_filepath)
-    
+
     if args.custom_filepath:
         custom_memory(args.custom_filepath, output_filepath)
 
@@ -176,5 +179,5 @@ if __name__ == '__main__':
                 output_file.close()
         output_file = open(output_filepath, 'wb+')
         pickle.dump(memory_buffer, output_file)
-        
+
     output_file.close()
