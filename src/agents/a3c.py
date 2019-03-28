@@ -122,7 +122,7 @@ class MasterAgent():
                  sparse_update=0,
                  action_stack_size=4,
                  conv_size=None,
-                 learning_rate=0.0000042,
+                 learning_rate=0.00042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
@@ -248,8 +248,8 @@ class MasterAgent():
                     prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
+                        prev_states = prev_states[1:] + [state]
                         if self.action_stack_size > 0:
-                            prev_states = prev_states[1:] + [state]
                             one_hot_action = np.zeros(self.num_actions)
                             one_hot_action[action] = 1
                             prev_actions = prev_actions[1:] + [one_hot_action]
@@ -565,8 +565,8 @@ class Worker(threading.Thread):
         sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
         prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
         for index, (state, action) in enumerate(zip(memory.states, memory.actions)):
+            prev_states = prev_states[1:] + [state]
             if self.action_stack_size > 0:
-                prev_states = prev_states[1:] + [state]
                 one_hot_action = np.zeros(self.num_actions)
                 one_hot_action[action] = 1
                 prev_actions = prev_actions[1:] + [one_hot_action]
