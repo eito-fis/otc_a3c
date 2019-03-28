@@ -17,86 +17,20 @@ from tensorflow import keras
 
 from collections import Counter
 
-class Memory:
-    def __init__(self):
-        self.states = []
-        self.actions = []
-        self.rewards = []
-        self.obs = []
-        self.probs = []
-        self.values = []
-        self.novelty = []
-
-    def store(self, state, action, reward):
-        self.states.append(state)
-        self.actions.append(action)
-        self.rewards.append(reward)
-
-    def clear(self):
-        self.states = []
-        self.actions = []
-        self.rewards = []
-        self.obs=[]
-        self.probs = []
-        self.values = []
-        self.novelty = []
-
-class ProbabilityDistribution(keras.Model):
-    def call(self, logits):
-        # Sample a random action from logits
-        return tf.squeeze(tf.random.categorical(logits, 1), axis=-1)
-
-class ActorModel(keras.Model):
-    def __init__(self,
-                 num_actions=None,
-                 state_size=None,
-                 stack_size=None,
-                 sparse_stack_size=None,
-                 conv_size=None,
-                 actor_fc=None,
-                 critic_fc=None,
-                 curiosity_fc=None):
-        super().__init__()
-        state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size)]
-
-        # Build fully connected layers for our models
-        self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
-
-        # Build endpoints for our models
-        self.actor_logits = keras.layers.Dense(num_actions, name='policy_logits')
-        # Build A2C models
-        self.actor_model = tf.keras.Sequential(self.actor_fc + [self.actor_logits])
-        self.actor_model.build([None] + state_size)
-
-        # Build sample chooser TODO: Replace with tf.distribution
-        self.dist = ProbabilityDistribution()
-
-        # Run the entire pipeline to build the graph before async workers start
-        self.actor_model(np.random.random((1,) + tuple(state_size)))
-        self.dist(np.random.random((1, num_actions)))
-
-    def call(self, inputs):
-        # Call our models on the input and return
-        actor_logits = self.actor_model(inputs)
-
-        return actor_logits
-
-    def get_action_value(self, obs):
-        logits = self.actor_model(obs)
-
-        action = self.dist.predict(logits)
-        action = action[0]
-
-        return action
+from src.agents.a3c import ActorCriticModel as A3CModel
+from src.agents.a3c import Memory, ProbabilityDistribution
+from src.agents.curiosity import ActorCriticModel as CuriosityModel
 
 class MasterAgent():
     def __init__(self,
                  train_steps=1000,
                  env_func=None,
+                 curiosity=False,
                  num_actions=2,
                  state_size=[4],
                  stack_size=6,
                  sparse_stack_size=4,
+                 action_stack_size=4,
                  max_floor=5,
                  boredom_thresh=10,
                  actor_fc=None,
@@ -115,18 +49,32 @@ class MasterAgent():
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.action_stack_size = action_stack_size
         self.actor_fc = actor_fc
 
         self.boredom_thresh = boredom_thresh
 
         self.env_func = env_func
-        self.global_model = ActorModel(num_actions=self.num_actions,
-                                       state_size=self.state_size,
-                                       stack_size=self.stack_size,
-                                       sparse_stack_size=sparse_stack_size,
-                                       actor_fc=self.actor_fc)
+        self.curiosity = curiosity
+        if curiosity:
+            self.global_model = CuriosityModel(num_actions=self.num_actions,
+                                               state_size=self.state_size,
+                                               stack_size=self.stack_size,
+                                               actor_fc=self.actor_fc,
+                                               critic_fc=(1024,512),
+                                               curiosity_fc=(1024,512))
+        else:
+            self.global_model = A3CModel(num_actions=self.num_actions,
+                                         state_size=self.state_size,
+                                         stack_size=self.stack_size,
+                                         sparse_stack_size=sparse_stack_size,
+                                         action_stack_size=self.action_stack_size,
+                                         actor_fc=self.actor_fc,
+                                         critic_fc=(1024,512))
+
         if load_path != None:
-            self.global_model.load_weights(load_path, by_name=True)
+            self.global_model.load_weights(load_path)
+            print("LOADED!")
 
     def distributed_eval(self):
         res_queue = Queue()
@@ -137,11 +85,13 @@ class MasterAgent():
                    state_size=self.state_size,
                    stack_size=self.stack_size,
                    sparse_stack_size=self.sparse_stack_size,
+                   action_stack_size=self.action_stack_size,
                    actor_fc=self.actor_fc,
                    boredom_thresh=self.boredom_thresh,
                    global_model=self.global_model,
                    result_queue=res_queue,
                    env_func=self.env_func,
+                   curiosity=self.curiosity,
                    max_episodes=self.train_steps,
                    memory_path=self.memory_path,
                    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
@@ -184,11 +134,13 @@ class Worker(threading.Thread):
                  state_size=[4],
                  stack_size=None,
                  sparse_stack_size=None,
+                 action_stack_size=None,
                  actor_fc=None,
                  boredom_thresh=None,
                  global_model=None,
                  result_queue=None,
                  env_func=None,
+                 curiosity=False,
                  max_episodes=None,
                  memory_path='/tmp/a3c/visuals',
                  save_path='/tmp/a3c/workers'):
@@ -197,14 +149,25 @@ class Worker(threading.Thread):
         self.state_size = state_size
         self.stack_size = stack_size
         self.sparse_stack_size = sparse_stack_size
+        self.action_stack_size = action_stack_size
         self.max_floor = max_floor
 
         self.global_model = global_model
-        self.local_model = ActorModel(num_actions=self.num_actions,
-                                            state_size=self.state_size,
-                                            stack_size=self.stack_size,
-                                            sparse_stack_size=self.sparse_stack_size,
-                                            actor_fc=actor_fc)
+        if curiosity:
+            self.local_model = CuriosityModel(num_actions=self.num_actions,
+                                              state_size=self.state_size,
+                                              stack_size=self.stack_size,
+                                              actor_fc=actor_fc,
+                                              critic_fc=(1024,512),
+                                              curiosity_fc=(1024,512))
+        else:
+            self.local_model = A3CModel(num_actions=self.num_actions,
+                                        state_size=self.state_size,
+                                        stack_size=self.stack_size,
+                                        sparse_stack_size=sparse_stack_size,
+                                        action_stack_size=self.action_stack_size,
+                                        actor_fc=actor_fc,
+                                        critic_fc=(1024,512))
         self.local_model.set_weights(self.global_model.get_weights())
 
         print("Building environment")
@@ -237,10 +200,15 @@ class Worker(threading.Thread):
             done = False
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
             sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
+            prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
             boredom_actions = []
             passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
+                if time_count > 0 and self.action_stack_size > 0:
+                    one_hot_action = np.zeros(self.num_actions)
+                    one_hot_action[action] = 1
+                    prev_actions = prev_actions[1:] + [one_hot_action]
                 if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
                     sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
@@ -248,8 +216,9 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([range(self.num_actions)]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = np.concatenate(prev_states + sparse_states)
-                    action = self.local_model.get_action_value(stacked_state[None, :])
+                    stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
+                    action = self.local_model.actor_model.predict(stacked_state[None, :])
+                    action = self.local_model.dist.predict(action)[0]
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
