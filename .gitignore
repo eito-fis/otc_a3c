@@ -8,3 +8,6 @@ memories/
 memory_output/
 human_replay/
 **/__pycache__/
+images/
+embeddings/
+images_zip/
