@@ -313,7 +313,7 @@ class MasterAgent():
 
     def initialize_critic_model(self, batch_size, critic_steps):
         random_states = np.random.random((batch_size,) + tuple(self.state_size[:-1] +
-                                                            [self.state_size[-1] * self.stack_size + (self.num_actions * self.stack_size)]))
+                                                            [self.state_size[-1] * self.stack_size + (self.num_actions * self.action_stack_size)]))
         zero_rewards = np.zeros(batch_size)
         for critic_step in range(critic_steps):
             with tf.GradientTape() as tape:
@@ -431,6 +431,7 @@ class Worker(threading.Thread):
                                             state_size=self.state_size,
                                             stack_size=stack_size,
                                             sparse_stack_size=self.sparse_stack_size,
+                                            action_stack_size=self.action_stack_size,
                                             conv_size=self.conv_size,
                                             actor_fc=actor_fc,
                                             critic_fc=critic_fc)
