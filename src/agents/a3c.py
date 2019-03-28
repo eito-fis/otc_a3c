@@ -77,7 +77,8 @@ class ActorCriticModel(keras.Model):
                  action_stack_size=0,
                  conv_size=None,
                  actor_fc=None,
-                 critic_fc=None):
+                 critic_fc=None,
+                 opt=None):
         super().__init__()
         state_size = state_size[:-1] + [state_size[-1] * (stack_size + sparse_stack_size) + (num_actions * action_stack_size)]
 
@@ -174,7 +175,8 @@ class MasterAgent():
                                              action_stack_size=self.action_stack_size,
                                              conv_size=self.conv_size,
                                              actor_fc=self.actor_fc,
-                                             critic_fc=self.critic_fc)
+                                             critic_fc=self.critic_fc,
+                                             opt=self.opt)
         if load_path != None:
             self.global_model.load_weights(load_path)
             print("Loaded model from {}".format(load_path))
@@ -275,6 +277,14 @@ class MasterAgent():
             total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights)
             self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights))
             print("Step: {} | Loss: {}".format(train_step, total_loss))
+            if train_step % 100 == 0:
+                target_actions, states  = next(generator)
+                predict_actions = self.global_model.actor_model(states)
+                predict_actions = [np.argmax(distribution) for distribution in predict_actions]
+                target_actions = list(target_actions.numpy())
+                correct = [1 if t == p else 0 for t, p in zip(target_actions, predict_actions)]
+                print("Accuracy: {}".format(sum(correct) / len(correct)))
+
 
         critic_batch_size = 100
         critic_steps = 1000
