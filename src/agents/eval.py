@@ -218,13 +218,13 @@ class Worker(threading.Thread):
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
                     action = self.local_model.actor_model.predict(stacked_state[None, :])
-                    action = self.local_model.dist.predict(action)[0]
+                    action = np.argmax(action)
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
                 total_reward += reward
                 mem.store(state, action, reward)
-                if reward == 1:
+                if reward >= 1:
                     passed = True
                     break
 
