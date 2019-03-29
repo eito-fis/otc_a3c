@@ -1,4 +1,3 @@
-import gin
 import numpy as np
 
 from obstacle_tower_env import ObstacleTowerEnv
@@ -9,11 +8,26 @@ import tensorflow_hub as hub
 
 from PIL import Image
 
+class AutoEncoder(tf.keras.Model):
+  def __init__(self, embedding_size=128, input_size=1280):
+    super(AutoEncoder, self).__init__()
+    self.dense2 = tf.keras.layers.Dense(embedding_size, activation='relu')
+    self.dense4 = tf.keras.layers.Dense(input_size, activation='sigmoid')
+    
+  def call(self, data):
+    data = self.dense2(data)
+    _ = self.dense4(data)
+    return data
+
 class WrappedKerasLayer(tf.keras.layers.Layer):
-    def __init__(self, retro, mobilenet):
+    def __init__(self, retro, mobilenet, deep_module_path):
         super(WrappedKerasLayer, self).__init__()
-        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280],
-        trainable=False)
+        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280], trainable=False)
+        if deep_module_path:
+            self.deep_module = AutoEncoder()
+            self.deep_module(np.random.random(1280)[None, :])
+            self.deep_module.load_weights(deep_module_path)
+        else: self.deep_module = None
         if mobilenet:
             self.input_spec = (1, 224, 224, 3)
         else:
@@ -23,11 +37,12 @@ class WrappedKerasLayer(tf.keras.layers.Layer):
         _input = np.reshape(np.array(_input), self.input_spec)
         _input = tf.convert_to_tensor(_input, dtype=tf.float32)
         tensor_var = tf.convert_to_tensor(np.array(self.layer(_input)))
-        # print("tensor_var: {}".format(tensor_var.shape))
+        tensor_var = tensorvar / tf.maximum(tensor_var)
+        if self.deep_module:
+            tensor_var = self.deep_module(tensor_var)
         tensor_var = tf.squeeze(tensor_var)
         return tensor_var
 
-@gin.configurable
 class WrappedObstacleTowerEnv():
 
     def __init__(
@@ -41,7 +56,8 @@ class WrappedObstacleTowerEnv():
         num_actions=3,
         mobilenet=False,
         gray_scale=False,
-        floor=0
+        floor=0,
+        deep_module_path=None
         ):
         '''
         Arguments:
@@ -62,7 +78,7 @@ class WrappedObstacleTowerEnv():
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
         if mobilenet:
-            self.image_module = WrappedKerasLayer(retro, self.mobilenet)
+            self.image_module = WrappedKerasLayer(retro, self.mobilenet, deep_module_path)
         self._done = False
 
     def action_spec(self):
@@ -93,9 +109,9 @@ class WrappedObstacleTowerEnv():
         observation = self._obstacle_tower_env.reset()
         self._done = False
         if self.mobilenet:
-            # gray_observation = self.gray_process_observation(observation)
+            gray_observation = self.gray_process_observation(observation)
             observation = self._preprocess_observation(observation)
-            return self.image_module(observation), observation
+            return self.image_module(observation), gray_observation
         elif self.gray_scale:
             return (self.grey_process_observation(observation), reward, done, info), observation
         else:
@@ -125,9 +141,9 @@ class WrappedObstacleTowerEnv():
         self._done = done
 
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
-            # gray_observation = self.gray_process_observation(observation)
+            gray_observation = self.gray_process_observation(observation)
             observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info), observation
+            return (self.image_module(observation), reward, done, info), gray_observation
         elif self.gray_scale:
             return (self.gray_process_observation(observation), reward, done, info), observation
         else:

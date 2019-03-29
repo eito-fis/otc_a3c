@@ -49,13 +49,15 @@ def main(args,
          conv_size=None,
          realtime_mode=True):
     realtime_mode = args.render
+    deep_module_path = args.deep_module_path
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=realtime_mode)
+                                       realtime_mode=realtime_mode,
+                                       deep_module_path=deep_module_path)
 
     log_dir = os.path.join(args.output_dir, "log")
     save_dir = os.path.join(args.output_dir, "checkpoints")
@@ -146,6 +148,10 @@ if __name__ == '__main__':
         '--mobilenet',
         default=False,
         action='store_true')
+    parser.add_argument(
+        '--deep-module-path',
+        type=str,
+        default=None)
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
