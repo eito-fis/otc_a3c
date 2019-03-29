@@ -32,21 +32,21 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=2500,
+         initial_train_steps=250,
          num_episodes=10000,
          log_period=25,
          save_period=50,
          visual_period=1,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
+         conv_size=((8,4,16), (4,2,32)),
          num_actions=4,
          stack_size=10,
          sparse_stack_size=0,
          sparse_update=5,
          action_stack_size=0,
-         state_size=[1280],
+         state_size=[84,84,1],
          batch_size=1000,
-         conv_size=None,
          realtime_mode=True):
     realtime_mode = args.render
 

@@ -56,7 +56,8 @@ class WrappedObstacleTowerEnv():
         '''
 
         self._obstacle_tower_env = ObstacleTowerEnv(environment_filename, docker_training, worker_id, retro, timeout_wait, realtime_mode)
-        self._obstacle_tower_env.floor(floor)
+        if floor != 0:
+            self._obstacle_tower_env.floor(floor)
         self._flattener = ActionFlattener([3,3,2,3])
         self._action_space = self._flattener.action_space
         self.mobilenet = mobilenet
@@ -76,8 +77,9 @@ class WrappedObstacleTowerEnv():
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((84, 84), Image.NEAREST)
-        grey_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
-        return grey_observation / 255
+        gray_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
+        gray_observation = (gray_observation / 255)
+        return gray_observation
 
     def _preprocess_observation(self, observation):
         """
@@ -93,11 +95,11 @@ class WrappedObstacleTowerEnv():
         observation = self._obstacle_tower_env.reset()
         self._done = False
         if self.mobilenet:
-            # gray_observation = self.gray_process_observation(observation)
+            gray_observation = self.gray_process_observation(observation)
             observation = self._preprocess_observation(observation)
             return self.image_module(observation), observation
         elif self.gray_scale:
-            return (self.grey_process_observation(observation), reward, done, info), observation
+            return (self.gray_process_observation(observation)), gray_observation
         else:
             return self._preprocess_observation(observation)
 
@@ -125,9 +127,10 @@ class WrappedObstacleTowerEnv():
         self._done = done
 
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
-            # gray_observation = self.gray_process_observation(observation)
+            gray_observation = self.gray_process_observation(observation)
             observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info), observation
+            #return (self.image_module(observation), reward, done, info), observation
+            return (self.image_module(observation), reward, done, info), gray_observation
         elif self.gray_scale:
             return (self.gray_process_observation(observation), reward, done, info), observation
         else:
