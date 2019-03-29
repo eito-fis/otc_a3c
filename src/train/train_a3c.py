@@ -56,8 +56,7 @@ def main(args,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=realtime_mode,
-                                       deep_module_path=deep_module_path)
+                                       realtime_mode=realtime_mode)
 
     log_dir = os.path.join(args.output_dir, "log")
     save_dir = os.path.join(args.output_dir, "checkpoints")
@@ -74,6 +73,7 @@ def main(args,
                                action_stack_size=action_stack_size,
                                actor_fc=actor_fc,
                                critic_fc=critic_fc,
+                               deep_module_path=deep_module_path,
                                summary_writer=summary_writer,
                                save_path=save_dir,
                                memory_path=args.memory_dir,

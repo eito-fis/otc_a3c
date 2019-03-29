@@ -35,7 +35,10 @@ def record(episode,
     total_loss: The total loss accumualted over the current episode
     num_steps: The number of steps the episode took to complete
     """
-    global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
+    if global_ep_reward == 0:
+        global_ep_reward = episode_reward
+    else:
+        global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
     print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
@@ -68,6 +71,17 @@ class ProbabilityDistribution(keras.Model):
         # Sample a random action from logits
         return tf.squeeze(tf.random.categorical(logits, 1), axis=-1)
 
+class AutoEncoder(tf.keras.Model):
+  def __init__(self, embedding_size=128, input_size=1280):
+    super(AutoEncoder, self).__init__()
+    self.dense2 = tf.keras.layers.Dense(embedding_size, activation='relu')
+    self.dense4 = tf.keras.layers.Dense(input_size, activation='sigmoid')
+    
+  def call(self, data):
+    data = self.dense2(data)
+    _ = self.dense4(data)
+    return data
+
 class ActorCriticModel(keras.Model):
     def __init__(self,
                  num_actions=None,
@@ -99,7 +113,7 @@ class ActorCriticModel(keras.Model):
     def call(self, inputs):
         actor_logits = self.actor_model(inputs)
         value = self.critic_model(inputs)
-
+            
         return actor_logits, value
 
     def get_action_value(self, obs):
@@ -130,6 +144,7 @@ class MasterAgent():
                  update_freq=650,
                  actor_fc=None,
                  critic_fc=None,
+                 deep_module_path=None,
                  summary_writer=None,
                  log_period=10,
                  checkpoint_period=10,
@@ -158,6 +173,7 @@ class MasterAgent():
         self.conv_size = conv_size
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
+        self.deep_module_path = deep_module_path
 
         self.gamma = gamma
         self.entropy_discount = entropy_discount
@@ -167,6 +183,12 @@ class MasterAgent():
 
         self.opt = tf.keras.optimizers.Adam(learning_rate)
         self.env_func = env_func
+
+        if deep_module_path is not None:
+            self.deep_module = AutoEncoder()
+            self.deep_module(np.random.random(1280)[None, :])
+            self.deep_module.load_weights(deep_module_path)
+            self.state_size = [128]
 
         self.global_model = ActorCriticModel(num_actions=self.num_actions,
                                              state_size=self.state_size,
@@ -194,6 +216,7 @@ class MasterAgent():
                    conv_size=self.conv_size,
                    actor_fc=self.actor_fc,
                    critic_fc=self.critic_fc,
+                   deep_module_path=self.deep_module_path,
                    gamma=self.gamma,
                    entropy_discount=self.entropy_discount,
                    value_discount=self.value_discount,
@@ -248,6 +271,7 @@ class MasterAgent():
                     prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
+                        state = np.squeeze(self.deep_module(state[None, :]))
                         prev_states = prev_states[1:] + [state]
                         if self.action_stack_size > 0:
                             one_hot_action = np.zeros(self.num_actions)
@@ -400,6 +424,7 @@ class Worker(threading.Thread):
                  conv_size=None,
                  actor_fc=None,
                  critic_fc=None,
+                 deep_module_path=None,
                  gamma=0.99,
                  entropy_discount=None,
                  value_discount=None,
@@ -424,6 +449,14 @@ class Worker(threading.Thread):
         self.action_stack_size = action_stack_size
         self.sparse_update = sparse_update
         self.conv_size = conv_size
+        self.deep_module = deep_module_path
+
+        if deep_module_path is not None:
+            self.deep_module = AutoEncoder()
+            self.deep_module(np.random.random(1280)[None, :])
+            self.deep_module.load_weights(deep_module_path)
+            self.deep_module(np.random.random(1280)[None, :])
+            self.state_size = [128]
 
         self.opt = opt
         self.global_model = global_model
@@ -469,6 +502,7 @@ class Worker(threading.Thread):
 
         while Worker.global_episode < self.max_episodes:
             state, obs = self.env.reset()
+            state = np.squeeze(self.deep_module.predict(state[None, :]))
             rolling_average_state = state
             mem.clear()
             ep_reward = 0.
@@ -502,6 +536,7 @@ class Worker(threading.Thread):
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
+                new_state = np.squeeze(self.deep_module.predict(new_state[None, :]))
                 ep_reward += reward
                 mem.store(state, action, reward)
                 if save_visual:
