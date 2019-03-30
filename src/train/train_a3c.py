@@ -32,7 +32,7 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=250,
+         initial_train_steps=500,
          num_episodes=10000,
          log_period=25,
          save_period=50,

@@ -99,7 +99,7 @@ class WrappedObstacleTowerEnv():
             observation = self._preprocess_observation(observation)
             return self.image_module(observation), observation
         elif self.gray_scale:
-            return (self.gray_process_observation(observation)), gray_observation
+            return (self.gray_process_observation(observation)), observation
         else:
             return self._preprocess_observation(observation)
 

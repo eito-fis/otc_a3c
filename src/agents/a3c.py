@@ -84,10 +84,12 @@ class ActorCriticModel(keras.Model):
         conv_state_size = state_size
         if conv_size != None:
             # Build conv model
-            preprocess_convs = [keras.layers.Conv2D(padding="same",
-                                                    kernel_size=k,
-                                                    strides=s,
-                                                    filters=f) for (k,s,f) in conv_size]
+            preprocess_convs = []
+            for (k,s,f) in conv_size:
+                preprocess_convs.append(keras.layers.Conv2D(padding="same", kernel_size=k, strides=s, filters=f))
+                preprocess_convs.append(keras.layers.BatchNormalization())
+                preprocess_convs.append(keras.layers.Activation("relu"))
+
             flatten = keras.layers.Flatten()
             self.conv_model = tf.keras.Sequential(preprocess_convs + [flatten])
             self.conv_model.build([None] + state_size)
@@ -141,7 +143,7 @@ class MasterAgent():
                  sparse_stack_size=0,
                  sparse_update=0,
                  action_stack_size=4,
-                 learning_rate=0.00000042,
+                 learning_rate=0.00042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
@@ -269,6 +271,7 @@ class MasterAgent():
                     prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.obs)):
                         if action >= self.num_actions: continue
+                        if state.shape[0] != 84: continue
                         prev_states = prev_states[1:] + [state]
                         if self.action_stack_size > 0:
                             one_hot_action = np.zeros(self.num_actions)
@@ -300,7 +303,7 @@ class MasterAgent():
             self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights +
                                                       self.global_model.conv_model.trainable_weights))
             print("Step: {} | Loss: {}".format(train_step, total_loss))
-            if train_step % 100 == 0:
+            if train_step % 25 == 0:
                 target_actions, states  = next(generator)
                 predict_actions, _ = self.global_model(states)
                 predict_actions = [np.argmax(distribution) for distribution in predict_actions]
