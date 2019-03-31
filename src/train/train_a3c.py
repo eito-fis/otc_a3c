@@ -32,7 +32,7 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=500,
+         initial_train_steps=21,
          num_episodes=10000,
          log_period=25,
          save_period=50,
@@ -46,7 +46,7 @@ def main(args,
          sparse_update=5,
          action_stack_size=0,
          state_size=[84,84,1],
-         batch_size=1000,
+         batch_size=100,
          realtime_mode=True):
     realtime_mode = args.render
 

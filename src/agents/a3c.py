@@ -17,6 +17,7 @@ import tensorflow_hub as hub
 from tensorflow import keras
 
 from collections import Counter
+import random
 
 def record(episode,
            episode_reward,
@@ -253,6 +254,7 @@ class MasterAgent():
         # Load human input from pickle file
         data_file = open(data_path, 'rb')
         memory_list = pickle.load(data_file)
+        random.shuffle(memory_list)
         data_file.close()
         print("Loaded files")
 
@@ -263,9 +265,10 @@ class MasterAgent():
         print(counts)
         counts = [(sum(counts) - c) / sum(counts) for c in counts]
 
-        def gen():
+        def gen(generator_memory_list):
             while True:
-                for memory in memory_list:
+                print(len(generator_memory_list))
+                for memory in generator_memory_list:
                     prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
                     sparse_states = [np.random.random(tuple(self.state_size)) for _ in range(self.sparse_stack_size)]
                     prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
@@ -280,37 +283,33 @@ class MasterAgent():
                         if self.sparse_stack_size > 0 and index % self.sparse_update == 0:
                             sparse_states = sparse_states[1:] + [state]
                         stacked_state = np.concatenate(prev_states + sparse_states + prev_actions, axis=-1).astype(np.float32)
-                        yield (action, stacked_state)
+                        weight = counts[action]
+                        yield (stacked_state, action, weight)
 
-        dataset = tf.data.Dataset.from_generator(generator=gen,
-                                                 output_types=(tf.float32, tf.float32))
-        dataset = dataset.shuffle(10000).batch(batch_size)
-        generator = iter(dataset)
+        training_memories = memory_list[5:]
+        training_gen = lambda: gen(training_memories)
+        validation_memories = memory_list[:5]
+        validation_gen = lambda: gen(validation_memories)
+
+        training_dataset = tf.data.Dataset.from_generator(generator=training_gen,
+                                                 output_types=(tf.float32, tf.float32, tf.float32))
+        training_dataset = training_dataset.shuffle(10000).batch(batch_size)
+        training_dataset_gen = iter(training_dataset)
+        validation_dataset = tf.data.Dataset.from_generator(generator=validation_gen,
+                                                 output_types=(tf.float32, tf.float32, tf.float32))
+        validation_dataset = validation_dataset.shuffle(500).batch(batch_size)
+        validation_dataset_gen = iter(validation_dataset)
 
         print("Starting steps...")
-        for train_step in range(train_steps):
-            actions, states  = next(generator)
-            weights = [counts[action] for action in actions]
-            with tf.GradientTape() as tape:
-                total_loss = self.compute_loss(actions,
-                                               states,
-                                               weights,
-                                               self.gamma)
-
-            # Calculate and apply policy gradients
-            total_grads = tape.gradient(total_loss, self.global_model.actor_model.trainable_weights +
-                                                    self.global_model.conv_model.trainable_weights)
-            self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights +
-                                                      self.global_model.conv_model.trainable_weights))
-            print("Step: {} | Loss: {}".format(train_step, total_loss))
-            if train_step % 25 == 0:
-                target_actions, states  = next(generator)
-                predict_actions, _ = self.global_model(states)
-                predict_actions = [np.argmax(distribution) for distribution in predict_actions]
-                target_actions = list(target_actions.numpy())
-                correct = [1 if t == p else 0 for t, p in zip(target_actions, predict_actions)]
-                print("Accuracy: {}".format(sum(correct) / len(correct)))
-
+        model = tf.keras.models.Sequential(self.global_model.conv_model.layers +
+                                           self.global_model.actor_model.layers)
+        model.compile(optimizer="Adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=["accuracy"])
+        model.fit_generator(generator=training_dataset_gen,
+                            epochs=train_steps,
+                            steps_per_epoch=10,
+                            validation_data=validation_dataset_gen,
+                            validation_steps=10,
+                            validation_freq=10)
 
         critic_batch_size = 100
         critic_steps = 1000
