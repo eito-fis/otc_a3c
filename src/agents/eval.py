@@ -34,6 +34,7 @@ class MasterAgent():
                  max_floor=5,
                  boredom_thresh=10,
                  actor_fc=None,
+                 conv_size=None,
                  memory_path="/tmp/a3c/visuals",
                  save_path="/tmp/a3c",
                  load_path=None):
@@ -51,6 +52,7 @@ class MasterAgent():
         self.sparse_stack_size = sparse_stack_size
         self.action_stack_size = action_stack_size
         self.actor_fc = actor_fc
+        self.conv_size = conv_size
 
         self.boredom_thresh = boredom_thresh
 
@@ -70,7 +72,8 @@ class MasterAgent():
                                          sparse_stack_size=sparse_stack_size,
                                          action_stack_size=self.action_stack_size,
                                          actor_fc=self.actor_fc,
-                                         critic_fc=(1024,512))
+                                         critic_fc=(1024,512),
+                                         conv_size=self.conv_size)
 
         if load_path != None:
             self.global_model.load_weights(load_path)
@@ -87,6 +90,7 @@ class MasterAgent():
                    sparse_stack_size=self.sparse_stack_size,
                    action_stack_size=self.action_stack_size,
                    actor_fc=self.actor_fc,
+                   conv_size=self.conv_size,
                    boredom_thresh=self.boredom_thresh,
                    global_model=self.global_model,
                    result_queue=res_queue,
@@ -136,6 +140,7 @@ class Worker(threading.Thread):
                  sparse_stack_size=None,
                  action_stack_size=None,
                  actor_fc=None,
+                 conv_size=None,
                  boredom_thresh=None,
                  global_model=None,
                  result_queue=None,
@@ -167,7 +172,8 @@ class Worker(threading.Thread):
                                         sparse_stack_size=sparse_stack_size,
                                         action_stack_size=self.action_stack_size,
                                         actor_fc=actor_fc,
-                                        critic_fc=(1024,512))
+                                        critic_fc=(1024,512),
+                                        conv_size=conv_size)
         self.local_model.set_weights(self.global_model.get_weights())
 
         print("Building environment")
@@ -216,8 +222,8 @@ class Worker(threading.Thread):
                     possible_actions = np.delete(np.array([range(self.num_actions)]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
-                    action = self.local_model.actor_model.predict(stacked_state[None, :])
+                    stacked_state = np.concatenate(prev_states + sparse_states + prev_actions, axis=-1).astype(np.float32)
+                    action, _ = self.local_model(stacked_state[None, :])
                     action = np.argmax(action)
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
