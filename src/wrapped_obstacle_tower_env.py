@@ -37,9 +37,9 @@ class WrappedKerasLayer(tf.keras.layers.Layer):
         _input = np.reshape(np.array(_input), self.input_spec)
         _input = tf.convert_to_tensor(_input, dtype=tf.float32)
         tensor_var = tf.convert_to_tensor(np.array(self.layer(_input)))
-        tensor_var = tensorvar / tf.maximum(tensor_var)
-        if self.deep_module:
-            tensor_var = self.deep_module(tensor_var)
+        #tensor_var = tensorvar / tf.maximum(tensor_var)
+        #if self.deep_module:
+        #    tensor_var = self.deep_module(tensor_var)
         tensor_var = tf.squeeze(tensor_var)
         return tensor_var
 
@@ -80,6 +80,7 @@ class WrappedObstacleTowerEnv():
         if mobilenet:
             self.image_module = WrappedKerasLayer(retro, self.mobilenet, deep_module_path)
         self._done = False
+        self.id = worker_id
 
     def action_spec(self):
         return self._action_spec
@@ -109,13 +110,14 @@ class WrappedObstacleTowerEnv():
         observation = self._obstacle_tower_env.reset()
         self._done = False
         if self.mobilenet:
-            gray_observation = self.gray_process_observation(observation)
-            observation = self._preprocess_observation(observation)
-            return self.image_module(observation), gray_observation
+            #gray_observation = self.gray_process_observation(observation)
+            image_observation = self._preprocess_observation(observation)
+            observation = (observation[0] * 255).astype(np.uint8)
+            return self.image_module(image_observation), observation[0]
         elif self.gray_scale:
-            return (self.grey_process_observation(observation), reward, done, info), observation
+            return self.grey_process_observation(observation), observation[0]
         else:
-            return self._preprocess_observation(observation)
+            return self._preprocess_observation(observation), observation
 
     def step(self, action):
         #if self._done:
@@ -141,11 +143,11 @@ class WrappedObstacleTowerEnv():
         self._done = done
 
         if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
-            gray_observation = self.gray_process_observation(observation)
-            observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info), gray_observation
+            #gray_observation = self.gray_process_observation(observation)
+            mobile_observation = self._preprocess_observation(observation)
+            return (self.image_module(mobile_observation), reward, done, info), observation[0]
         elif self.gray_scale:
-            return (self.gray_process_observation(observation), reward, done, info), observation
+            return (self.gray_process_observation(observation), reward, done, info), observation[0]
         else:
             return (self._preprocess_observation(observation), reward, done, info), observation
 

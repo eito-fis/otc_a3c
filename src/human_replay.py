@@ -170,6 +170,9 @@ if __name__ == '__main__':
             mem = run(env, args.save_obs)
             memory_buffer.append(mem)
             if episode % period == 0:
+                print(mem.obs[0].dtype)
+                print(mem.obs[0])
+                input()
                 output_file = open(output_filepath, 'wb+')
                 pickle.dump(memory_buffer, output_file)
                 print("Finished episode {}. Memory buffer saved.".format(episode))
