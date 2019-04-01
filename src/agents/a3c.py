@@ -35,8 +35,11 @@ def record(episode,
     total_loss: The total loss accumualted over the current episode
     num_steps: The number of steps the episode took to complete
     """
-    global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
+    if global_ep_reward == 0:
+        global_ep_reward = episode_reward
+    else:
+        global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
+    print("Episode: {} | Pass rate: {} | Episode Reward: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
     result_queue.put(global_ep_reward)
     return global_ep_reward
 
@@ -122,7 +125,7 @@ class MasterAgent():
                  sparse_update=0,
                  action_stack_size=4,
                  conv_size=None,
-                 learning_rate=0.00042,
+                 learning_rate=0.00000042,
                  gamma=0.99,
                  entropy_discount=0.05,
                  value_discount=0.1,
@@ -507,7 +510,7 @@ class Worker(threading.Thread):
                 if save_visual:
                     mem.obs.append(obs)
 
-                if time_count == self.update_freq or done:
+                if reward >= 1 or time_count == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
                     # variables involved in computing the loss by using tf.GradientTape
 
@@ -524,8 +527,9 @@ class Worker(threading.Thread):
                     # Update local model with new weights
                     self.local_model.set_weights(self.global_model.get_weights())
 
-                    if done:
-                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
+                    if done or reward >= 1:
+                        done = True
+                        self.log_episode(save_visual, current_episode, ep_steps, 1 if reward >= 1 else 0, mem, total_loss)
                         Worker.global_episode += 1
                     time_count = 0
 

@@ -44,6 +44,7 @@ def main(args,
          sparse_stack_size=0,
          sparse_update=5,
          action_stack_size=0,
+         floor=3,
          state_size=[1280],
          batch_size=1000,
          conv_size=None,
@@ -57,7 +58,7 @@ def main(args,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
                                        realtime_mode=realtime_mode,
-                                       deep_module_path=deep_module_path)
+                                       floor=floor)
 
     log_dir = os.path.join(args.output_dir, "log")
     save_dir = os.path.join(args.output_dir, "checkpoints")
