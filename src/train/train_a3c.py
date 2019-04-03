@@ -17,7 +17,8 @@ import gin
 import logging
 import argparse
 
-from src.agents.a3c import MasterAgent, Memory
+from src.agents.a3c import MasterAgent
+from src.models.actor_critic_model import Memory
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 
 import gym
