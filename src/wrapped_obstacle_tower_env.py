@@ -9,7 +9,7 @@ import tensorflow_hub as hub
 from PIL import Image
 
 class WrappedKerasLayer(tf.keras.layers.Layer):
-    def __init__(self, retro, mobilenet, deep_module_path):
+    def __init__(self, retro, mobilenet):
         super(WrappedKerasLayer, self).__init__()
         self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280], trainable=False)
         self.input_spec = (1, 224, 224, 3)
@@ -61,7 +61,7 @@ class WrappedObstacleTowerEnv():
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
         if mobilenet:
-            self.image_module = WrappedKerasLayer(retro, self.mobilenet, deep_module_path)
+            self.image_module = WrappedKerasLayer(retro, self.mobilenet)
         self._done = False
         self.id = worker_id
 

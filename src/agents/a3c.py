@@ -43,12 +43,12 @@ def record(episode,
         global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
 
     # Print metrics
-    print("Episode: {} | \
-           Moving Average Reward: {} | \
-           Episode Reward: {} | \
-           Loss: {} | \
-           Steps: {} | \
-           Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
+    print("Episode: {} |\
+    Moving Average Reward: {} |\
+    Episode Reward: {} |\
+    Loss: {} |\
+    Steps: {} |\
+    Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
 
     # Add metrics to queue
     result_queue.put(global_ep_reward)
@@ -93,26 +93,24 @@ class ActorCriticModel(keras.Model):
     critic_fc: Iterable containing the amount of neurons per layer for the critic model
         ex: (1024, 512, 256) would make 3 fully connected layers, with 1024, 512 and 256
             layers respectively
-    opt: Tensorflow optimizer object
     '''
     def __init__(self,
                  num_actions=None,
                  state_size=None,
                  stack_size=None,
                  actor_fc=None,
-                 critic_fc=None,
-                 opt=None):
+                 critic_fc=None):
         super().__init__()
 
         # Multiply the final dimension of the state by stack_size to get correct input_size
-        state_size = state_size[:-1] + [state_size[-1] * stack_size)]
+        state_size = state_size[:-1] + [state_size[-1] * stack_size]
 
         # Build the fully connected layers for the actor and critic models
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
         self.critic_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in critic_fc]
 
         # Build the output layers for the actor and critic models
-        self.actor_logits = keras.layers.Dense(num_actions, name='policy_logits')(x)
+        self.actor_logits = keras.layers.Dense(num_actions, name='policy_logits')
         self.value = keras.layers.Dense(1, name='value', activation='relu')
 
         # Build the final actor and critic models
@@ -124,6 +122,7 @@ class ActorCriticModel(keras.Model):
         # Run each model with random inputs to force Keras to build the static graphs
         self.actor_model(np.random.random((1,) + tuple(state_size)))
         self.critic_model(np.random.random((1,) + tuple(state_size)))
+        self.predict(np.random.random((1,) + tuple(state_size)))
 
     def call(self, inputs):
         # Call each model on the input, and return each output
@@ -151,7 +150,7 @@ class MasterAgent():
     Master Agent
     - Builds and runs our async workers, and maintains our global model
     Arguments:
-    num_episodes: Total number of episodes to be run by workers
+    num_episodes: Total number of episodes to be played by workers
     num_actions: Number of possible actions in the environment
     state_size: Expected size of state returned from environment
     stack_size: Number of stacked frames our model will consider
@@ -181,8 +180,8 @@ class MasterAgent():
                  num_actions=3,
                  state_size=[4],
                  stack_size=10,
-                 actor_fc=None,
-                 critic_fc=None,
+                 actor_fc=(512,256),
+                 critic_fc=(512,256),
                  learning_rate=0.00042,
                  env_func=None,
                  gamma=0.99,
@@ -221,8 +220,7 @@ class MasterAgent():
                                              state_size=self.state_size,
                                              stack_size=self.stack_size,
                                              actor_fc=self.actor_fc,
-                                             critic_fc=self.critic_fc,
-                                             opt=self.opt)
+                                             critic_fc=self.critic_fc)
         # Load weights into global model only if a path is defined
         if load_path != None:
             self.global_model.load_weights(load_path)
@@ -233,7 +231,7 @@ class MasterAgent():
         self.save_path = save_path
         self.log_period = log_period
         self.checkpoint_period = checkpoint_period
-        self.memory_period = visual_period
+        self.memory_period = memory_period
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
@@ -245,28 +243,37 @@ class MasterAgent():
         res_queue = Queue()
 
         # Build each of our multithread workers
-        workers = [Worker(idx=i,
-                   global_model=self.global_model,
-                   result_queue=res_queue,
-                   max_episodes=self.num_episodes,
-                   num_actions=self.num_actions,
-                   state_size=self.state_size,
-                   stack_size=self.stack_size,
-                   actor_fc=self.actor_fc,
-                   critic_fc=self.critic_fc,
-                   opt=self.opt,
-                   env_func=self.env_func,
-                   gamma=self.gamma,
-                   entropy_discount=self.entropy_discount,
-                   value_discount=self.value_discount,
-                   boredom_thresh=self.boredom_thresh,
-                   update_freq=self.update_freq,
-                   summary_writer=self.summary_writer,
-                   memory_path=self.memory_path,
-                   save_path=self.save_path,
-                   log_period=self.log_period,
-                   checkpoint_period=self.checkpoint_period,
-                   memory_period=self.memory_period) for i in range(multiprocessing.cpu_count())]
+        workers = []
+        for i in range(multiprocessing.cpu_count()):
+            # Build worker's local model
+            worker_model = ActorCriticModel(num_actions=self.num_actions,
+                                            state_size=self.state_size,
+                                            stack_size=self.stack_size,
+                                            actor_fc=self.actor_fc,
+                                            critic_fc=self.critic_fc)
+            # Build the worker
+            workers.append(Worker(idx=i,
+                           global_model=self.global_model,
+                           local_model=worker_model,
+                           result_queue=res_queue,
+                           max_episodes=self.num_episodes,
+                           num_actions=self.num_actions,
+                           state_size=self.state_size,
+                           stack_size=self.stack_size,
+                           opt=self.opt,
+                           env_func=self.env_func,
+                           gamma=self.gamma,
+                           entropy_discount=self.entropy_discount,
+                           value_discount=self.value_discount,
+                           boredom_thresh=self.boredom_thresh,
+                           update_freq=self.update_freq,
+                           summary_writer=self.summary_writer,
+                           memory_path=self.memory_path,
+                           save_path=self.save_path,
+                           log_period=self.log_period,
+                           checkpoint_period=self.checkpoint_period,
+                           memory_period=self.memory_period))
+            print("Worker {} built!".format(i))
 
         # Start each of our workers
         for i, worker in enumerate(workers):
@@ -319,7 +326,7 @@ class MasterAgent():
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
                         prev_states = prev_states[1:] + [state]
-                        stacked_state = np.concatenate(prev_states)
+                        stacked_state = np.concatenate(prev_states, axis=-1)
                         yield (action, stacked_state)
 
         # Build a dataset from the generator, shuffle and batch it then turn it into an iterator
@@ -450,7 +457,7 @@ class MasterAgent():
                     action = np.random.choice(possible_actions)
                 else:
                     # Convert our stack memory into a single vector
-                    stacked_state = np.concatenate(prev_states)
+                    stacked_state = np.concatenate(prev_states, axis=-1)
 
                     # Calculate logits, then argmax to get our most confident action
                     logits = self.global_model.actor_model(stacked_state[None, :])
@@ -495,14 +502,11 @@ class Worker(threading.Thread):
     idx: Unique worker id
     result_queue: Queue object that allows the child threads to talk to the parent
     global_model: Global model to pull weights from and apply gradients to
+    local_model: Local model that will play episdoes and calculate gradients
     max_episodes: Total amount of episodes to be played be agents
     num_actions: Number of possible actions in the environment
     state_size: Expected size of state returned from environment
     stack_size: Number of stacked frames our model will consider
-    actor_fc: Iterable containing the amount of neurons per layer for the actor model
-    critic_fc: Iterable containing the amount of neurons per layer for the critic model
-        ex: (1024, 512, 256) would make 3 fully connected layers, with 1024, 512 and 256
-            layers respectively
     env_func: Callable function that builds an environment for each worker. Will be passed an idx
     opt: Tensorflow optimizer object
     gamma: Decay coefficient used to discount future reward while calculating loss
@@ -531,12 +535,11 @@ class Worker(threading.Thread):
                  idx=0,
                  result_queue=None,
                  global_model=None,
+                 local_model=None,
                  max_episodes=500,
                  num_actions=2,
                  state_size=[4],
                  stack_size=None,
-                 actor_fc=None,
-                 critic_fc=None,
                  env_func=None,
                  opt=None,
                  gamma=0.99,
@@ -545,7 +548,7 @@ class Worker(threading.Thread):
                  boredom_thresh=None,
                  update_freq=None,
                  summary_writer=None,
-                 memory_path='/tmp/a3c/visuals/',
+                 memory_path=None,
                  save_path='/tmp/a3c/workers',
                  log_period=10,
                  checkpoint_period=10,
@@ -556,14 +559,7 @@ class Worker(threading.Thread):
         self.global_model = global_model
 
         # Create local model, then copy the global models weights
-        self.local_model = ActorCriticModel(num_actions=self.num_actions,
-                                            state_size=self.state_size,
-                                            stack_size=stack_size,
-                                            sparse_stack_size=self.sparse_stack_size,
-                                            action_stack_size=self.action_stack_size,
-                                            conv_size=self.conv_size,
-                                            actor_fc=actor_fc,
-                                            critic_fc=critic_fc)
+        self.local_model = local_model
         self.local_model.set_weights(self.global_model.get_weights())
 
         self.max_episodes = max_episodes
@@ -625,13 +621,14 @@ class Worker(threading.Thread):
 
                 # Calculate the deviation between the rolling average of previous frames and the current frame
                 # Allows us to detect is we aren't reasonably moving, and take action
+                _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     # Take an action that isn't the previous action
                     possible_actions = np.delete(np.array(range(self.num_actions)), action)
                     action = np.random.choice(possible_actions)
                 else:
                     # Convert our stack memory into a single vector
-                    stacked_state = np.concatenate(prev_states)
+                    stacked_state = np.concatenate(prev_states, axis=-1)
                     # Pass vector to model and sample from the logits to get a single action
                     action, _ = self.local_model.get_action_value(stacked_state[None, :])
 
@@ -712,7 +709,7 @@ class Worker(threading.Thread):
         prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
         for index, (state, action) in enumerate(zip(memory.states, memory.actions)):
             prev_states = prev_states[1:] + [state]
-            stacked_states.append(np.concatenate(prev_states))
+            stacked_states.append(np.concatenate(prev_states, axis=-1))
 
         # Get batch of logits and values
         logits, values = self.local_model(np.array(stacked_states))
