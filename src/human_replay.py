@@ -174,7 +174,8 @@ if __name__ == '__main__':
                 pickle.dump(memory_buffer, output_file)
                 print("Finished episode {}. Memory buffer saved.".format(episode))
                 output_file.close()
-        output_file = open(output_filepath, 'wb+')
-        pickle.dump(memory_buffer, output_file)
+        if episode % period != 0:
+            output_file = open(output_filepath, 'wb+')
+            pickle.dump(memory_buffer, output_file)
         
     output_file.close()
