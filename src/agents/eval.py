@@ -21,6 +21,22 @@ from src.agents.a3c import ActorCriticModel as A3CModel
 from src.agents.a3c import Memory, ProbabilityDistribution
 from src.agents.curiosity import ActorCriticModel as CuriosityModel
 
+def average_level(histogram):
+        histogram = [.953, .853, .563, .521, .656]
+        inverse_histogram = list(map(lambda x: 1 - x, histogram))
+        max_level = len(histogram)
+        avg_level = 0
+        for i, (ratio, inv_ratio) in enumerate(zip(histogram, inverse_histogram)):
+            level = i
+            fail_ratio = inv_ratio
+            if i > 0:
+                prev_ratios = histogram[:i]
+                pass_ratio = reduce((lambda x, y: x * y), prev_ratios)
+                fail_ratio = fail_ratio * pass_ratio
+            avg_level += level * fail_ratio
+        final_avg_level = avg_level + reduce((lambda x, y: x * y), histogram) * max_level
+        print("Average level: {}".format(final_avg_level))
+
 class MasterAgent():
     def __init__(self,
                  train_steps=1000,
@@ -108,15 +124,19 @@ class MasterAgent():
                 floor, passed = data
 
                 all_floors[floor,passed] += 1
-                print("Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+                floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
+                print("Floor histogram: {}".format(floor_hist))
                 print("Floors overall: {}".format([p + not_p for p, not_p in all_floors]))
+                average_level(floor_hist)
             else:
                 break
         [w.join() for w in workers]
         print("Done!")
         # floors_hist = np.histogram(all_floors, 10, (0,10))
-        print("Final Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+        floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
+        print("Final Floor histogram: {}".format(floor_hist))
         print("Final floors overall: {}".format([p + not_p for p, not_p in all_floors]))
+        average_level(floor_hist)
         return all_floors
 
 class Worker(threading.Thread):
@@ -188,7 +208,8 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            floor = np.random.randint(0, self.max_floor)
+            # floor = np.random.randint(0, self.max_floor)
+            floor = 1
             self.env.floor(floor)
             state, obs = self.env.reset()
             rolling_average_state = state
@@ -215,15 +236,19 @@ class Worker(threading.Thread):
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([range(self.num_actions)]), action)
                     action = np.random.choice(possible_actions)
+                    probs = np.zeros(self.num_actions)
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
-                    action = self.local_model.actor_model.predict(stacked_state[None, :])
-                    action = self.local_model.dist.predict(action)[0]
+                    probs = self.local_model.actor_model.predict(stacked_state[None, :])
+                    probs = tf.nn.softmax(probs).numpy()
+                    action = np.argmax(probs[0])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
                 total_reward += reward
                 mem.store(state, action, reward)
+                mem.probs.append(probs)
+                mem.obs.append(obs)
                 if reward == 1:
                     passed = True
                     break
@@ -236,6 +261,14 @@ class Worker(threading.Thread):
             if passed:
                 self.result_queue.put((floor,0))
             else:
+                if self.memory_path is not None:
+                    output_filepath = os.path.join(self.memory_path, "_worker{}_episode{}".format(self.worker_idx, current_episode))
+                    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+                    print("Saving memory to output file path {}".format(output_filepath))
+                    output_file = open(output_filepath, 'wb+')
+                    pickle.dump(mem, output_file)
                 self.result_queue.put((floor,1))
+            
+            Worker.global_episode += 1
 
         self.result_queue.put(None)
