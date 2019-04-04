@@ -9,6 +9,8 @@ python3 -m src.human_replay --period: How many games to wait before saving memor
                             --output-filepath: Path to where the memory buffer will be stored
                             --floor: The floor the environment will start on
 ```
+`python3 -m src.human_replay --period 1 --episodes 20 --save-obs --output-filepath human_input/output_file`
+
 ### Running Models
 ###### Specific hyperparameters like `learning rate` and `stack size` can be tuned in each respective commands `train/` file.
 ### * Training
@@ -23,6 +25,7 @@ python3 -m src.train.train_a3c --output-dir: Checkpoint and logging directory
                                --gray: Environment returns grayscale 84x84 images. For convolutions
                                --mobilenet: Environment returns 1280 embeddings. *SHOULD ALMOST ALWAYS BE SET*
 ```
+`python3 -m src.train.train_a3c --mobilenet --render --restore PATH_TO_MODEL --output-dir data/test`
 
 ### * Multi-threaded Evaluation
 ```
@@ -34,3 +37,4 @@ pyton3 -m src.train.run_eval --env-filename: Path to environment if path isn't d
                              --mobilenet: Environment returns 1280 embeddings. *SHOULD ALMOST ALWAYS BE SET*
                              --curiosity: Set when evaluating a curiosity model
 ```
+`python3 -m src.train.run_eval --render --mobilenet --restore PATH_TO_MODEL`
