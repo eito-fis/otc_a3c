@@ -1,6 +1,6 @@
 # Usage
 ### * Collecting Human Replay
-```python
+```
 python3 -m src.human_replay --period: How many games to wait before saving memory
                             --episodes: Total amount of games to play
                             --save-obs: Whether to save images or not
@@ -12,7 +12,7 @@ python3 -m src.human_replay --period: How many games to wait before saving memor
 ### Running Models
 ###### Specific hyperparameters like `learning rate` and `stack size` can be tuned in each respective commands `train/` file.
 ### * Training
-```python
+```
 python3 -m src.train.train_a3c --output-dir: Checkpoint and logging directory
                                --memory-dir: Memory logging directory. Memories / Images will only be saved when this flag is set
                                --restore: Model weights to restore from
@@ -25,7 +25,7 @@ python3 -m src.train.train_a3c --output-dir: Checkpoint and logging directory
 ```
 
 ### * Multi-threaded Evaluation
-```python
+```
 pyton3 -m src.train.run_eval --env-filename: Path to environment if path isn't default
                              --memory-dir: Memory logging directory. Memories / Images will only be saved when this flag is set
                              --restore: Model weights to restore from
