@@ -12,7 +12,8 @@ from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 from src.agents.a3c import Memory
 
 def input_action():    # 0    1    2    3    4    5    6    7    8    9
-    possible_actions = ['w', 'k', 'l', ' ', 'p', 's', 'd', 'a', ',', '.']
+    # possible_actions = ['w', 'k', 'l', ' ', 'p', 's', 'd', 'a', ',', '.']
+    possible_actions = ['w', 'k', 'l', ' ']
     while True:
         action = getch.getch()
         if action in possible_actions:
