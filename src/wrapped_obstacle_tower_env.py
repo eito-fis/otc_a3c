@@ -13,7 +13,7 @@ class AutoEncoder(tf.keras.Model):
     super(AutoEncoder, self).__init__()
     self.dense2 = tf.keras.layers.Dense(embedding_size, activation='relu')
     self.dense4 = tf.keras.layers.Dense(input_size, activation='sigmoid')
-    
+
   def call(self, data):
     data = self.dense2(data)
     _ = self.dense4(data)
@@ -115,7 +115,7 @@ class WrappedObstacleTowerEnv():
             observation = (observation[0] * 255).astype(np.uint8)
             return self.image_module(image_observation), observation[0]
         elif self.gray_scale:
-            return self.grey_process_observation(observation), observation[0]
+            return self.gray_process_observation(observation), observation[0]
         else:
             return self._preprocess_observation(observation), observation
 
