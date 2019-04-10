@@ -26,8 +26,6 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-from functools import reduce
-
 # import time
 # import matplotlib
 # matplotlib.use('PS')
@@ -58,12 +56,6 @@ def main(args,
          max_floor=5,
          state_size=[84,84,1]):
     realtime_mode = args.render
-
-    # histogram = [.653, .333, .283, .359, .269]
-    # average_level(histogram)
-    # histogram = [.583, .594, .375, .28, .261]
-    # average_level(histogram)
-    # input()
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
