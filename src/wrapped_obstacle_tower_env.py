@@ -6,6 +6,8 @@ from obstacle_tower_env import ActionFlattener
 
 import tensorflow as tf
 import tensorflow_hub as hub
+from tensorflow.keras.layers import Input, Dense, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate
+from tensorflow.keras.models import Model
 
 from PIL import Image
 
@@ -27,6 +29,30 @@ class WrappedKerasLayer(tf.keras.layers.Layer):
         tensor_var = tf.squeeze(tensor_var)
         return tensor_var
 
+INPUT_SHAPE = (84, 84, 1)
+
+def build_autoencoder(model_path):
+    _input = Input(shape=INPUT_SHAPE)
+
+    conv_1 = Conv2D(16, (3, 3), activation='relu', padding='same')(_input)
+    max_1 = MaxPooling2D((2, 2), padding='same')(conv_1)
+    conv_2 = Conv2D(8, (2, 2), activation='relu', padding='same')(max_1)
+    encoded = MaxPooling2D((2, 2), padding='same')(conv_2)
+
+    upconv_2 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(encoded)
+    concat_2 = concatenate([upconv_2, conv_2])
+    conv_3 = Conv2D(8, (3, 3), activation='relu', padding='same')(concat_2)
+
+    upconv_1 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(conv_3)
+    concat_1 = concatenate([upconv_1, conv_1])
+    conv_4 = Conv2D(16, (3, 3), activation='relu', padding='same')(concat_1)
+
+    _output = Conv2D(1, (1, 1), activation='relu', padding='same')(conv_4)
+
+    autoencoder = Model(_input, _output)
+    autoencoder.load_weights(model_path)
+    return autoencoder
+
 @gin.configurable
 class WrappedObstacleTowerEnv():
 
@@ -41,6 +67,7 @@ class WrappedObstacleTowerEnv():
         num_actions=3,
         mobilenet=False,
         gray_scale=False,
+        autoencoder=None,
         floor=0
         ):
         '''
@@ -65,6 +92,12 @@ class WrappedObstacleTowerEnv():
         if mobilenet:
             self.image_module = WrappedKerasLayer(retro, self.mobilenet)
         self._done = False
+        if autoencoder:
+            print("Loading autoencoder from {}".format(autoencoder))
+            self.autoencoder = build_autoencoder(autoencoder)
+            print("Done.")
+        else:
+            self.autoencoder = None
 
     def action_spec(self):
         return self._action_spec
@@ -79,6 +112,8 @@ class WrappedObstacleTowerEnv():
         obs_image = obs_image.resize((84, 84), Image.NEAREST)
         gray_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
         gray_observation = (gray_observation / 255)
+
+        # gray_observation = self.autoencoder.predict(gray_observation)
         return gray_observation
 
     def _preprocess_observation(self, observation):
@@ -99,7 +134,10 @@ class WrappedObstacleTowerEnv():
             observation = self._preprocess_observation(observation)
             return self.image_module(observation), observation
         elif self.gray_scale:
-            return (self.gray_process_observation(observation)), observation
+            gray_observation = self.gray_process_observation(observation)
+            if self.autoencoder:
+                return self.autoencoder.predict(gray_observation[None,:])[0], observation
+            return gray_observation, observation
         else:
             return self._preprocess_observation(observation)
 
@@ -132,7 +170,10 @@ class WrappedObstacleTowerEnv():
             #return (self.image_module(observation), reward, done, info), observation
             return (self.image_module(observation), reward, done, info), gray_observation
         elif self.gray_scale:
-            return (self.gray_process_observation(observation), reward, done, info), observation
+            gray_observation = self.gray_process_observation(observation)
+            if self.autoencoder:
+                return (self.autoencoder.predict(gray_observation[None,:])[0], reward, done, info), observation
+            return (gray_observation, reward, done, info), observation
         else:
             return (self._preprocess_observation(observation), reward, done, info), observation
 

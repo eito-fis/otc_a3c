@@ -32,8 +32,8 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 
 def main(args,
-         initial_train_steps=21,
-         num_episodes=10000,
+         initial_train_steps=100,
+         num_episodes=0,
          log_period=25,
          save_period=50,
          visual_period=1,
@@ -41,7 +41,7 @@ def main(args,
          critic_fc=(1024, 512),
          conv_size=((8,4,32), (4,2,64), (3,1,64)),
          num_actions=4,
-         stack_size=10,
+         stack_size=4,
          sparse_stack_size=0,
          sparse_update=5,
          action_stack_size=0,
@@ -55,7 +55,8 @@ def main(args,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=realtime_mode)
+                                       realtime_mode=realtime_mode,
+                                       autoencoder=args.autoencoder)
 
     log_dir = os.path.join(args.output_dir, "log")
     save_dir = os.path.join(args.output_dir, "checkpoints")
@@ -100,7 +101,7 @@ def main(args,
         print("Train done!")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('slideshow rl')
+    parser = argparse.ArgumentParser('OTC - 42RoboLab')
     # Input data arguments
     parser.add_argument(
         '--output-dir',
@@ -146,6 +147,10 @@ if __name__ == '__main__':
         '--mobilenet',
         default=False,
         action='store_true')
+    parser.add_argument(
+        '--autoencoder',
+        type=str,
+        default=None)
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)

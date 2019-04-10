@@ -88,8 +88,8 @@ class ActorCriticModel(keras.Model):
             preprocess_convs = []
             for (k,s,f) in conv_size:
                 preprocess_convs.append(keras.layers.Conv2D(padding="same", kernel_size=k, strides=s, filters=f))
-                preprocess_convs.append(keras.layers.BatchNormalization())
-                preprocess_convs.append(keras.layers.Activation("relu"))
+                # preprocess_convs.append(keras.layers.BatchNormalization())
+                # preprocess_convs.append(keras.layers.Activation("relu"))
 
             flatten = keras.layers.Flatten()
             self.conv_model = tf.keras.Sequential(preprocess_convs + [flatten])
@@ -98,7 +98,7 @@ class ActorCriticModel(keras.Model):
                             tf.convert_to_tensor(np.random.random((1,) + tuple(state_size)), dtype=tf.float32))
 
             state_size = [model_input.shape[-1]]
-            print(state_size)
+            # print(state_size)
         else: self.conv_model = None
 
         self.actor_fc = [keras.layers.Dense(neurons, activation="relu") for neurons in actor_fc]
@@ -262,8 +262,9 @@ class MasterAgent():
         for memory in memory_list:
             for action in memory.actions:
                 if action < self.num_actions: counts[action] += 1
-        print(counts)
+        print("action hist: {}".format(counts))
         counts = [(sum(counts) - c) / sum(counts) for c in counts]
+        print("action weights: {}".format(counts))
 
         def gen(generator_memory_list):
             while True:
@@ -303,7 +304,7 @@ class MasterAgent():
         print("Starting steps...")
         model = tf.keras.models.Sequential(self.global_model.conv_model.layers +
                                            self.global_model.actor_model.layers)
-        model.compile(optimizer="Adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=["accuracy"])
+        model.compile(optimizer="Adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"])
         model.fit_generator(generator=training_dataset_gen,
                             epochs=train_steps,
                             steps_per_epoch=10,

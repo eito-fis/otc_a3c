@@ -35,7 +35,7 @@ def main(args,
          actor_fc=(1024, 512),
          conv_size=((8,4,32), (4,2,64), (3,1,64)),
          num_actions=4,
-         stack_size=10,
+         stack_size=4,
          sparse_stack_size=0,
          action_stack_size=0,
          max_floor=5,
@@ -47,7 +47,8 @@ def main(args,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=realtime_mode)
+                                       realtime_mode=realtime_mode,
+                                       autoencoder=args.autoencoder)
 
     master_agent = MasterAgent(train_steps=train_steps,
                                num_actions=num_actions,
@@ -103,6 +104,10 @@ if __name__ == '__main__':
         '--curiosity',
         default=False,
         action='store_true')
+    parser.add_argument(
+        '--autoencoder',
+        type=str,
+        default=None)
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
