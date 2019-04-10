@@ -1,4 +1,3 @@
-
 import os
 import pickle
 import argparse
@@ -16,10 +15,26 @@ import tensorflow_hub as hub
 from tensorflow import keras
 
 from collections import Counter
+from functools import reduce
 
 from src.agents.a3c import ActorCriticModel as A3CModel
 from src.agents.a3c import Memory, ProbabilityDistribution
 from src.agents.curiosity import ActorCriticModel as CuriosityModel
+
+def average_level(histogram):
+        inverse_histogram = list(map(lambda x: 1 - x, histogram))
+        max_level = len(histogram)
+        avg_level = 0
+        for i, (ratio, inv_ratio) in enumerate(zip(histogram, inverse_histogram)):
+            level = i
+            fail_ratio = inv_ratio
+            if i > 0:
+                prev_ratios = histogram[:i]
+                pass_ratio = reduce((lambda x, y: x * y), prev_ratios)
+                fail_ratio = fail_ratio * pass_ratio
+            avg_level += level * fail_ratio
+        final_avg_level = avg_level + reduce((lambda x, y: x * y), histogram) * max_level
+        print("Average level: {}".format(final_avg_level))
 
 class MasterAgent():
     def __init__(self,
@@ -112,15 +127,19 @@ class MasterAgent():
                 floor, passed = data
 
                 all_floors[floor,passed] += 1
-                print("Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+                floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
+                print("Floor histogram: {}".format(floor_hist))
                 print("Floors overall: {}".format([p + not_p for p, not_p in all_floors]))
+                average_level(floor_hist)
             else:
                 break
         [w.join() for w in workers]
         print("Done!")
         # floors_hist = np.histogram(all_floors, 10, (0,10))
-        print("Final Floor histogram: {}".format([p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]))
+        floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
+        print("Final Floor histogram: {}".format(floor_hist))
         print("Final floors overall: {}".format([p + not_p for p, not_p in all_floors]))
+        average_level(floor_hist)
         return all_floors
 
 class Worker(threading.Thread):

@@ -26,9 +26,26 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
+from functools import reduce
+
 # import time
 # import matplotlib
 # matplotlib.use('PS')
+
+def average_level(histogram):
+        inverse_histogram = list(map(lambda x: 1 - x, histogram))
+        max_level = len(histogram)
+        avg_level = 0
+        for i, (ratio, inv_ratio) in enumerate(zip(histogram, inverse_histogram)):
+            level = i
+            fail_ratio = inv_ratio
+            if i > 0:
+                prev_ratios = histogram[:i]
+                pass_ratio = reduce((lambda x, y: x * y), prev_ratios)
+                fail_ratio = fail_ratio * pass_ratio
+            avg_level += level * fail_ratio
+        final_avg_level = avg_level + reduce((lambda x, y: x * y), histogram) * max_level
+        print("Average level: {}".format(final_avg_level))
 
 def main(args,
          train_steps=500,
@@ -41,6 +58,12 @@ def main(args,
          max_floor=5,
          state_size=[84,84,1]):
     realtime_mode = args.render
+
+    # histogram = [.653, .333, .283, .359, .269]
+    # average_level(histogram)
+    # histogram = [.583, .594, .375, .28, .261]
+    # average_level(histogram)
+    # input()
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
