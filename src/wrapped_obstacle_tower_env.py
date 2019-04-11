@@ -146,7 +146,7 @@ class WrappedObstacleTowerEnv():
         return np.array(obs_image)
 
     def reset(self):
-        observation = self._obstacle_tower_env.reset()
+        observation = self._obstacle_tower_env.reset()[0]
         self._done = False
         if self.mobilenet:
             if self.autoencoder:
