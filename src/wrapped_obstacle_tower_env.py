@@ -150,7 +150,7 @@ class WrappedObstacleTowerEnv():
         self._done = False
         if self.mobilenet:
             if self.autoencoder:
-                observation = self.autoencoder.predict(observation[0][None,:])[0]
+                observation = self.autoencoder.predict(observation[None,:])[0]
             observation = self._preprocess_observation(observation)
             return self.image_module(observation), observation
         elif self.gray_scale:
