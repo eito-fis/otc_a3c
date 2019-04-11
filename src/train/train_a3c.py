@@ -26,76 +26,76 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-# import time
-# import matplotlib
-# matplotlib.use('PS')
-import matplotlib.pyplot as plt
-
 def main(args,
-         initial_train_steps=100,
-         num_episodes=0,
-         log_period=25,
-         save_period=50,
-         visual_period=1,
+         human_train_steps=500,
+         human_batch_size=1000,
+         rl_episodes=1000,
+         num_actions=4,
+         state_size=[84,84,1],
+         stack_size=4,
          actor_fc=(1024, 512),
          critic_fc=(1024, 512),
          conv_size=((8,4,32), (4,2,64), (3,1,64)),
-         num_actions=4,
-         stack_size=4,
-         sparse_stack_size=0,
-         sparse_update=5,
-         action_stack_size=0,
-         state_size=[84,84,1],
-         batch_size=100,
-         realtime_mode=True):
-    realtime_mode = args.render
+         learning_rate=0.00042,
+         gamma=0.99,
+         entropy_discount=0.01,
+         value_discount=0.5,
+         boredom_thresh=10,
+         update_freq=650,
+         log_period=25,
+         checkpoint_period=50,
+         memory_period=1):
 
+    # Function that builds the environment
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=realtime_mode,
-                                       autoencoder=args.autoencoder)
+                                       realtime_mode=args.render)
 
+    # Make sure out logging dirs exist and build the summary writer
     log_dir = os.path.join(args.output_dir, "log")
     save_dir = os.path.join(args.output_dir, "checkpoints")
     summary_writer = tf.summary.create_file_writer(log_dir)
 
-    master_agent = MasterAgent(num_episodes=num_episodes,
+    # Build the agent!
+    master_agent = MasterAgent(num_episodes=rl_episodes,
                                num_actions=num_actions,
                                state_size=state_size,
-                               conv_size=conv_size,
-                               env_func=env_func,
                                stack_size=stack_size,
-                               sparse_stack_size=sparse_stack_size,
-                               sparse_update=sparse_update,
-                               action_stack_size=action_stack_size,
                                actor_fc=actor_fc,
                                critic_fc=critic_fc,
+                               conv_size=conv_size,
+                               learning_rate=learning_rate,
+                               env_func=env_func,
+                               gamma=gamma,
+                               entropy_discount=entropy_discount,
+                               value_discount=value_discount,
+                               boredom_thresh=boredom_thresh,
+                               update_freq=update_freq,
                                summary_writer=summary_writer,
-                               save_path=save_dir,
+                               load_path=args.restore,
                                memory_path=args.memory_dir,
-                               visual_period=visual_period,
-                               load_path=args.restore)
+                               save_path=save_dir,
+                               log_period=log_period,
+                               checkpoint_period=checkpoint_period,
+                               memory_period=memory_period)
 
     if args.eval:
-        reached_floors = []
+        # If runnig in eval mode, only eval
         print("Starting evaluation...")
         env = env_func(0)
-        for _ in range(100):
-            reached_floors.append(master_agent.play(env))
-            floors_hist = np.histogram(reached_floors, 5, (0,5))
-            print(floors_hist)
-        plt.hist(reached_floors, 5, (0,5))
-        plt.show()
+        master_agent.play(env)
         print("Evaluation done!")
     else:
+        # Otherwise, train on human input if passed...
         if args.human_input != None:
             print("Starting train on human input...")
-            master_agent.human_train(args.human_input, initial_train_steps, batch_size)
+            master_agent.human_train(args.human_input, human_train_steps, human_batch_size)
             print("Train done!")
 
+        # ...then train as RL
         print("Starting train...")
         master_agent.distributed_train()
         print("Train done!")
