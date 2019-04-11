@@ -344,8 +344,10 @@ class Worker(threading.Thread):
         if current_episode % self.log_period == 0:
             with self.summary_writer.as_default():
                 tf.summary.scalar("Episode Reward", ep_reward, current_episode)
+                tf.summary.scalar("Moving Global Average Reward", Worker.global_moving_average_reward, current_episode)
+                tf.summary.scalar("Episode Floor", ep_floor, current_episode)
+                tf.summary.scalar("Moving Global Average Floor", Worker.global_moving_average_floor, current_episode)
                 tf.summary.scalar("Episode Loss", tf.reduce_sum(total_loss), current_episode)
-                tf.summary.scalar("Moving Global Average", Worker.global_moving_average_reward, current_episode)
         if current_episode % self.checkpoint_period == 0:
             _save_path = os.path.join(self.save_path, "worker_{}_model_{}.h5".format(self.worker_idx, current_episode))
             self.local_model.save_weights(_save_path)
