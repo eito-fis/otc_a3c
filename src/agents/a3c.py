@@ -10,6 +10,7 @@ import tensorflow as tf
 
 from queue import Queue
 from collections import Counter
+import random
 
 from src.models.actor_critic_model import ActorCriticModel, Memory
 from src.agents.a3c_worker import Worker
@@ -174,6 +175,7 @@ class MasterAgent():
         # Load human input from pickle file
         data_file = open(data_path, 'rb')
         memory_list = pickle.load(data_file)
+        random.shuffle(memory_list)
         data_file.close()
         print("Loaded files")
 
@@ -182,60 +184,51 @@ class MasterAgent():
         counts = np.zeros(self.num_actions)
         for memory in memory_list:
             for action in memory.actions:
-                if action >= self.num_actions: continue
-                counts[action] += 1
-        print("Count of actions: {}".format(counts))
+                if action < self.num_actions: counts[action] += 1
+        print("Action hist: {}".format(counts))
         counts = [(sum(counts) - c) / sum(counts) for c in counts]
+        print("Action weights: {}".format(counts))
 
-        # A generator that iterates over our dataset and returns one action / stacked state pair
-        def gen():
+        # A generator that iterates over our a passed list of memories and returns one action / stacked state pair
+        def gen(generator_memory_list):
             while True:
-                for memory in memory_list:
+                for memory in generator_memory_list:
                     prev_states = [np.random.random(tuple(self.state_size)).astype(np.float32)for _ in range(self.stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
                         prev_states = prev_states[1:] + [state]
                         stacked_state = np.concatenate(prev_states, axis=-1)
-                        yield (action, stacked_state)
+                        weight = counts[action]
+                        yield (stacked_state, action, weight)
 
-        # Build a dataset from the generator, shuffle and batch it then turn it into an iterator
-        dataset = tf.data.Dataset.from_generator(generator=gen,
-                                                 output_types=(tf.float32, tf.float32))
-        dataset = dataset.shuffle(10000).batch(batch_size)
-        generator = iter(dataset)
+        # Build training and validation data generators
+        training_memories = memory_list[5:]
+        training_gen = lambda: gen(training_memories)
+        validation_memories = memory_list[:5]
+        validation_gen = lambda: gen(validation_memories)
 
+        # Build training and validation datasets
+        training_dataset = tf.data.Dataset.from_generator(generator=training_gen,
+                                                 output_types=(tf.float32, tf.float32, tf.float32))
+        training_dataset = training_dataset.shuffle(10000).batch(batch_size)
+        training_dataset_gen = iter(training_dataset)
+        validation_dataset = tf.data.Dataset.from_generator(generator=validation_gen,
+                                                 output_types=(tf.float32, tf.float32, tf.float32))
+        validation_dataset = validation_dataset.shuffle(500).batch(batch_size)
+        validation_dataset_gen = iter(validation_dataset)
+
+        # Compile the actor model layers in another model, then train!
         print("Starting steps...")
-        for train_step in range(train_steps):
-            # Get our batch of actions and states from the dataset
-            actions, states  = next(generator)
-            # Build a batch of weights corrosoponding to our actions
-            weights = [counts[action] for action in actions]
-
-            # Compute loss
-            with tf.GradientTape() as tape:
-                # Get logits
-                logits = self.global_model.actor_model(states)
-                # Calculate weighted sparse crossentropy between labels and our predictions
-                weighted_sparse_crossentropy = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-                loss = weighted_sparse_crossentropy(actions[:, None], logits, sample_weight=weights)
-
-            # Calculate and apply gradients
-            total_grads = tape.gradient(loss, self.global_model.actor_model.trainable_weights)
-            self.opt.apply_gradients(zip(total_grads, self.global_model.actor_model.trainable_weights))
-            print("Step: {} | Loss: {}".format(train_step, loss))
-
-            # Every 100 steps, run validation
-            if train_step % 100 == 0:
-                # Get our batch of actions and states from the dataset
-                target_actions, states  = next(generator)
-
-                # Get actor logits across our batch, then argmax to get our final answers
-                predict_actions = self.global_model.actor_model(states)
-                predict_actions = [np.argmax(distribution) for distribution in predict_actions]
-                # Compare our final answers to the labels
-                target_actions = list(target_actions.numpy())
-                correct = [1 if t == p else 0 for t, p in zip(target_actions, predict_actions)]
-                print("Accuracy: {}".format(sum(correct) / len(correct)))
+        model = tf.keras.models.Sequential(self.global_model.actor_model.layers)
+        model.compile(optimizer="Adam",
+                      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                      metrics=["accuracy"])
+        model.fit_generator(generator=training_dataset_gen,
+                            epochs=train_steps,
+                            steps_per_epoch=10,
+                            validation_data=validation_dataset_gen,
+                            validation_steps=10,
+                            validation_freq=10)
 
         # Initialize the critic model to predict 0 at the start - minimium expectations
         critic_batch_size = 100
@@ -263,7 +256,7 @@ class MasterAgent():
         for critic_step in range(critic_steps):
             # Generate the random states
             random_states = np.random.random((batch_size,) + tuple(self.state_size[:-1] + [self.state_size[-1] * self.stack_size]))
-            random_floors = np.random.randint(low=0, high=6, size=(batch_size, 1))
+            random_floors = np.random.random((batch_size, 1))
 
             # Push to 0
             with tf.GradientTape() as tape:
