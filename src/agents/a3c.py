@@ -14,43 +14,6 @@ from collections import Counter
 from src.models.actor_critic_model import ActorCriticModel, Memory
 from src.agents.a3c_worker import Worker
 
-def record(episode,
-           episode_reward,
-           worker_idx,
-           global_ep_reward,
-           result_queue,
-           total_loss,
-           num_steps):
-    """
-    Stores score and print statistics.
-    Arguments:
-    episode: Current episode
-    episode_reward: Total reward for current episode
-    worker_idx: ID of worker being recorded
-    global_ep_reward: The moving average of the global reward
-    result_queue: Queue storing the moving average of the scores
-    total_loss: Total loss accumualted for current episode
-    num_steps: Total steps for current episode
-    """
-    # Update global moving average
-    if global_ep_reward == 0:
-        global_ep_reward = episode_reward
-    else:
-        global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
-
-    # Print metrics
-    print("Episode: {} |\
-    Moving Average Reward: {} |\
-    Episode Reward: {} |\
-    Loss: {} |\
-    Steps: {} |\
-    Worker: {}".format(episode, global_ep_reward, episode_reward, total_loss, num_steps, worker_idx))
-
-    # Add metrics to queue
-    result_queue.put(global_ep_reward)
-
-    return global_ep_reward
-
 class MasterAgent():
     '''
     Master Agent
@@ -65,7 +28,7 @@ class MasterAgent():
         ex: (1024, 512, 256) would make 3 fully connected layers, with 1024, 512 and 256
             layers respectively
     learning_rate: Learning rate
-    env_func: Callable function that builds an environment for each worker. Will be passed an idx
+    env_func: Callable function that builds an environment for each worker. Will be passed an int as id
     gamma: Decay coefficient used to discount future reward while calculating loss
     entropy_discount: Discount coefficient used to control our entropy loss
     value_discount: Discount coefficient used to control our critic model loss
@@ -228,7 +191,7 @@ class MasterAgent():
         def gen():
             while True:
                 for memory in memory_list:
-                    prev_states = [np.random.random(tuple(self.state_size)) for _ in range(self.stack_size)]
+                    prev_states = [np.random.random(tuple(self.state_size)).astype(np.float32)for _ in range(self.stack_size)]
                     for index, (action, state) in enumerate(zip(memory.actions, memory.states)):
                         if action >= self.num_actions: continue
                         prev_states = prev_states[1:] + [state]
@@ -295,16 +258,17 @@ class MasterAgent():
         batch_size: Number of random states to initialize to 0
         critic_steps: Number of times we push towards 0
         '''
-        # Generate the batch of 0 rewards
-        zero_rewards = np.zeros(batch_size)
+        # Generate the batch of labels that are all 0
+        zero_labels = np.zeros(batch_size)
         for critic_step in range(critic_steps):
             # Generate the random states
             random_states = np.random.random((batch_size,) + tuple(self.state_size[:-1] + [self.state_size[-1] * self.stack_size]))
+            random_floors = np.random.randint(low=0, high=6, size=(batch_size, 1))
 
             # Push to 0
             with tf.GradientTape() as tape:
-                values = self.global_model.critic_model(random_states)
-                value_loss = tf.keras.losses.mean_squared_error(zero_rewards[:, None], values)
+                values = self.global_model.critic_model([random_states, random_floors])
+                value_loss = tf.keras.losses.mean_squared_error(zero_labels[:, None], values)
 
             value_grads = tape.gradient(value_loss, self.global_model.critic_model.trainable_weights)
             self.opt.apply_gradients(zip(value_grads, self.global_model.critic_model.trainable_weights))
@@ -320,12 +284,13 @@ class MasterAgent():
         done = False
         step_counter = 0
         reward_sum = 0
+        floor = 0.0
         rolling_average_state = np.zeros(state.shape) + (0.2 * state)
         memory = Memory()
 
         try:
             # Initialize our stack memory with random values
-            prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
+            prev_states = [np.random.random(state.shape).astype(np.float32) for _ in range(self.stack_size)]
             
             # Play an episode!
             while not done:
@@ -352,11 +317,12 @@ class MasterAgent():
                 (new_state, reward, done, _), new_observation = env.step(action)
 
                 # Save data to memory. Only save extra metrics if saving memory in the end
-                memory.store(state, action, reward)
+                memory.store(state, action, reward, floor)
                 if self.memory_path:
                     memory.obs.append(observation)
                     memory.probs.append(distribution)
-                    value = self.global_model.critic_model(stacked_state[None, :]).numpy()
+                    value = self.global_model.critic_model([stacked_state[None, :],
+                                                            np.array([floor], dtype=np.float32)[None, :]]).numpy()
                     memory.values.append(value)
 
                 # Update values for next iteration

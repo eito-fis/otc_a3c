@@ -14,6 +14,44 @@ from collections import Counter
 
 from src.models.actor_critic_model import ActorCriticModel, Memory
 
+def record(episode,
+           episode_reward,
+           episode_floor,
+           worker_idx,
+           global_ep_reward,
+           global_ep_floor,
+           result_queue,
+           total_loss,
+           num_steps):
+    """
+    Stores score and print statistics.
+    Arguments:
+    episode: Current episode
+    episode_reward: Total reward for current episode
+    worker_idx: ID of worker being recorded
+    global_ep_reward: The moving average of the global reward
+    result_queue: Queue storing the moving average of the scores
+    total_loss: Total loss accumualted for current episode
+    num_steps: Total steps for current episode
+    """
+    # Update global moving averages
+    if global_ep_reward == 0:
+        global_ep_reward = episode_reward
+    else:
+        global_ep_reward = global_ep_reward * 0.99 + episode_reward * 0.01
+    if global_ep_floor == 0:
+        global_ep_floor = episode_floor
+    else:
+        global_ep_floor = global_ep_floor * 0.8 + episode_floor * 0.2
+
+    # Print metrics
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Moving Average Floor: {} | Episode Floor: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, global_ep_floor, episode_floor, int(total_loss * 1000) / 1000, num_steps, worker_idx))
+
+    # Add metrics to queue
+    result_queue.put(global_ep_reward)
+
+    return global_ep_reward, global_ep_floor
+
 class Worker(threading.Thread):
     '''
     Worker agent
@@ -49,6 +87,7 @@ class Worker(threading.Thread):
     global_episode = 0
     # Moving average reward
     global_moving_average_reward = 0.0
+    global_moving_average_floor = 0.0
     best_score = 0
     save_lock = threading.Lock()
 
@@ -130,10 +169,11 @@ class Worker(threading.Thread):
             self.ep_loss = 0
 
             action = 0
+            floor = 0.
             time_count = 0
             done = False
             # Initialize our stack memory with random values
-            prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
+            prev_states = [np.random.random(state.shape).astype(np.float32) for _ in range(self.stack_size)]
 
             # Play an episode!
             while not done:
@@ -151,22 +191,25 @@ class Worker(threading.Thread):
                     # Convert our stack memory into a single vector
                     stacked_state = np.concatenate(prev_states, axis=-1)
                     # Pass vector to model and sample from the logits to get a single action
-                    action, _ = self.local_model.get_action_value(stacked_state[None, :])
+                    action, _ = self.local_model.get_action_value(stacked_state[None, :],
+                                                                  np.array([floor], dtype=np.float32)[None, :])
 
                 # Take our step
                 (new_state, reward, done, _), new_obs  = self.env.step(action)
 
                 # Save data to memory. Only save extra metrics if saving memory in the end
-                mem.store(state, action, reward)
-                if save_visual:
-                    mem.obs.append(obs)
+                mem.store(state, action, reward, floor)
+                if save_visual: mem.obs.append(obs)
                 ep_reward += reward
+
+                # If reward is 1, we found an exit and moved up a floor
+                if reward >= 1: floor += 1
 
                 # Calculate a gradient if we've hit update_freq many steps or have reached the end of an episode
                 if time_count == self.update_freq or done:
                     # Calculate loss based on trajectory
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state)
+                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor)
                     self.ep_loss += total_loss
 
                     # Calculate gradient for local model
@@ -198,7 +241,8 @@ class Worker(threading.Thread):
                      done,
                      gamma,
                      save_visual,
-                     stacked_state):
+                     stacked_state,
+                     final_floor):
         '''
         Computes loss for A2C model
         Arguments:
@@ -213,7 +257,8 @@ class Worker(threading.Thread):
         if done:
             reward_sum = 0.
         else:
-            reward_sum = self.local_model.critic_model(stacked_state[None, :])
+            reward_sum = self.local_model.critic_model([stacked_state[None, :],
+                                                        np.array([final_floor], dtype=np.float32)[None, :]])
             reward_sum = np.squeeze(reward_sum.numpy())
 
         # Calculate discounted rewards
@@ -231,7 +276,8 @@ class Worker(threading.Thread):
             stacked_states.append(np.concatenate(prev_states, axis=-1))
 
         # Get batch of logits and values
-        logits, values = self.local_model(np.array(stacked_states))
+        logits, values = self.local_model([np.array(stacked_states, dtype=np.float32),
+                                           np.array(memory.floors, dtype=np.float32)[:, None]])
 
         # Calculate our advantages
         advantage = np.array(discounted_rewards)[:, None] - values
@@ -273,10 +319,16 @@ class Worker(threading.Thread):
             print("Memory saved to {}".format(pickle_path))
 
         # Metrics logging and saving
-        Worker.global_moving_average_reward = \
-            record(Worker.global_episode, ep_reward, self.worker_idx,
-                   Worker.global_moving_average_reward, self.result_queue,
-                   self.ep_loss, ep_steps)
+        ep_floor = mem.floors[-1]
+        Worker.global_moving_average_reward, Worker.global_moving_average_floor = record(Worker.global_episode,
+                                                                                         ep_reward,
+                                                                                         ep_floor,
+                                                                                         self.worker_idx,
+                                                                                         Worker.global_moving_average_reward,
+                                                                                         Worker.global_moving_average_floor,
+                                                                                         self.result_queue,
+                                                                                         self.ep_loss,
+                                                                                         ep_steps)
 
         # We must use a lock to save our model and to print to prevent data races.
         if ep_reward > Worker.best_score:
