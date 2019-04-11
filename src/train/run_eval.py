@@ -46,7 +46,8 @@ def main(args,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=realtime_mode)
+                                       realtime_mode=realtime_mode,
+                                       autoencoder=args.autoencoder)
 
     master_agent = MasterAgent(train_steps=train_steps,
                                num_actions=num_actions,
@@ -101,6 +102,10 @@ if __name__ == '__main__':
         '--curiosity',
         default=False,
         action='store_true')
+    parser.add_argument(
+        '--autoencoder',
+        type=str,
+        default=None)
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)

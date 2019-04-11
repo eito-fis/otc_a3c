@@ -1,3 +1,4 @@
+import gin
 import numpy as np
 
 from obstacle_tower_env import ObstacleTowerEnv
@@ -5,29 +6,16 @@ from obstacle_tower_env import ActionFlattener
 
 import tensorflow as tf
 import tensorflow_hub as hub
+from tensorflow.keras.layers import Input, Dense, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate
+from tensorflow.keras.models import Model
 
 from PIL import Image
 
-class AutoEncoder(tf.keras.Model):
-  def __init__(self, embedding_size=128, input_size=1280):
-    super(AutoEncoder, self).__init__()
-    self.dense2 = tf.keras.layers.Dense(embedding_size, activation='relu')
-    self.dense4 = tf.keras.layers.Dense(input_size, activation='sigmoid')
-
-  def call(self, data):
-    data = self.dense2(data)
-    _ = self.dense4(data)
-    return data
-
 class WrappedKerasLayer(tf.keras.layers.Layer):
-    def __init__(self, retro, mobilenet, deep_module_path):
+    def __init__(self, retro, mobilenet):
         super(WrappedKerasLayer, self).__init__()
-        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280], trainable=False)
-        if deep_module_path:
-            self.deep_module = AutoEncoder()
-            self.deep_module(np.random.random(1280)[None, :])
-            self.deep_module.load_weights(deep_module_path)
-        else: self.deep_module = None
+        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280],
+        trainable=False)
         if mobilenet:
             self.input_spec = (1, 224, 224, 3)
         else:
@@ -37,12 +25,56 @@ class WrappedKerasLayer(tf.keras.layers.Layer):
         _input = np.reshape(np.array(_input), self.input_spec)
         _input = tf.convert_to_tensor(_input, dtype=tf.float32)
         tensor_var = tf.convert_to_tensor(np.array(self.layer(_input)))
-        #tensor_var = tensorvar / tf.maximum(tensor_var)
-        #if self.deep_module:
-        #    tensor_var = self.deep_module(tensor_var)
+        # print("tensor_var: {}".format(tensor_var.shape))
         tensor_var = tf.squeeze(tensor_var)
         return tensor_var
 
+INPUT_SHAPE = (168, 168, 3)
+
+def build_autoencoder(model_path):
+    _input = Input(shape=INPUT_SHAPE)
+
+    # conv_1 = Conv2D(16, (3, 3), activation='relu', padding='same')(_input)
+    # max_1 = MaxPooling2D((2, 2), padding='same')(conv_1)
+    # conv_2 = Conv2D(8, (2, 2), activation='relu', padding='same')(max_1)
+    # encoded = MaxPooling2D((2, 2), padding='same')(conv_2)
+
+    # upconv_2 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(encoded)
+    # concat_2 = concatenate([upconv_2, conv_2])
+    # conv_3 = Conv2D(8, (3, 3), activation='relu', padding='same')(concat_2)
+
+    # upconv_1 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(conv_3)
+    # concat_1 = concatenate([upconv_1, conv_1])
+    # conv_4 = Conv2D(16, (3, 3), activation='relu', padding='same')(concat_1)
+
+    # _output = Conv2D(1, (1, 1), activation='relu', padding='same')(conv_4)
+
+    conv_1 = Conv2D(16, (3, 3), activation='relu', padding='same')(_input)
+    max_1 = MaxPooling2D((2, 2), padding='same')(conv_1)
+    conv_2 = Conv2D(8, (3, 3), activation='relu', padding='same')(max_1)
+    max_2 = MaxPooling2D((2, 2), padding='same')(conv_2)
+    conv_3 = Conv2D(8, (3, 3), activation='relu', padding='same')(max_2)
+    encoded = MaxPooling2D((2, 2), padding='same')(conv_3)
+
+    upconv_3 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(encoded)
+    concat_3 = concatenate([upconv_3, conv_3])
+    conv_4 = Conv2D(8, (3, 3), activation='relu', padding='same')(concat_3)
+
+    upconv_2 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(conv_4)
+    concat_2 = concatenate([upconv_2, conv_2])
+    conv_5 = Conv2D(8, (3, 3), activation='relu', padding='same')(concat_2)
+
+    upconv_1 = Conv2DTranspose(8, (3, 3), strides=2, activation='relu', padding='same')(conv_5)
+    concat_1 = concatenate([upconv_1, conv_1])
+    conv_6 = Conv2D(16, (3, 3), activation='relu', padding='same')(concat_1)
+
+    _output = Conv2D(3, (1, 1), activation='relu', padding='same')(conv_6)
+
+    autoencoder = Model(_input, _output)
+    autoencoder.load_weights(model_path)
+    return autoencoder
+
+@gin.configurable
 class WrappedObstacleTowerEnv():
 
     def __init__(
@@ -56,8 +88,8 @@ class WrappedObstacleTowerEnv():
         num_actions=3,
         mobilenet=False,
         gray_scale=False,
-        floor=0,
-        deep_module_path=None
+        autoencoder=None,
+        floor=0
         ):
         '''
         Arguments:
@@ -72,15 +104,21 @@ class WrappedObstacleTowerEnv():
         '''
 
         self._obstacle_tower_env = ObstacleTowerEnv(environment_filename, docker_training, worker_id, retro, timeout_wait, realtime_mode)
-        self._obstacle_tower_env.floor(floor)
+        if floor != 0:
+            self._obstacle_tower_env.floor(floor)
         self._flattener = ActionFlattener([3,3,2,3])
         self._action_space = self._flattener.action_space
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
         if mobilenet:
-            self.image_module = WrappedKerasLayer(retro, self.mobilenet, deep_module_path)
+            self.image_module = WrappedKerasLayer(retro, self.mobilenet)
         self._done = False
-        self.id = worker_id
+        if autoencoder:
+            print("Loading autoencoder from {}".format(autoencoder))
+            self.autoencoder = build_autoencoder(autoencoder)
+            print("Done.")
+        else:
+            self.autoencoder = None
 
     def action_spec(self):
         return self._action_spec
@@ -89,18 +127,19 @@ class WrappedObstacleTowerEnv():
         return self._observation_spec
 
     def gray_process_observation(self, observation):
-        observation = observation[0]
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((84, 84), Image.NEAREST)
-        grey_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
-        return grey_observation / 255
+        gray_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
+        gray_observation = (gray_observation / 255)
+
+        # gray_observation = self.autoencoder.predict(gray_observation)
+        return gray_observation
 
     def _preprocess_observation(self, observation):
         """
         Re-sizes visual observation to 84x84
         """
-        observation = observation[0]
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((224, 224), Image.NEAREST)
@@ -110,12 +149,15 @@ class WrappedObstacleTowerEnv():
         observation = self._obstacle_tower_env.reset()
         self._done = False
         if self.mobilenet:
-            #gray_observation = self.gray_process_observation(observation)
-            image_observation = self._preprocess_observation(observation)
-            observation = (observation[0] * 255).astype(np.uint8)
-            return self.image_module(image_observation), observation[0]
+            if self.autoencoder:
+                observation = self.autoencoder.predict(observation[0][None,:])[0]
+            observation = self._preprocess_observation(observation)
+            return self.image_module(observation), observation
         elif self.gray_scale:
-            return self.gray_process_observation(observation), observation[0]
+            gray_observation = self.gray_process_observation(observation)
+            if self.autoencoder:
+                gray_observation = self.autoencoder.predict(gray_observation[None,:])[0]
+            return gray_observation, observation
         else:
             return self._preprocess_observation(observation), observation
 
@@ -131,23 +173,28 @@ class WrappedObstacleTowerEnv():
             action = [0, 2, 0, 0]
         elif action == 3: # jump forward
             action = [1, 0, 1, 0]
-        elif action == 5:
-            action = [2, 0, 0, 0]
-        elif action == 6:
-            action = [0, 0, 0, 1]
-        elif action == 7:
-            action = [0, 0, 0, 2]
+        # elif action == 5:
+        #     action = [2, 0, 0, 0]
+        # elif action == 6:
+        #     action = [0, 0, 0, 1]
+        # elif action == 7:
+        #     action = [0, 0, 0, 2]
 
 
         observation, reward, done, info = self._obstacle_tower_env.step(action)
+        observation = observation[0]
         self._done = done
 
-        if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
-            #gray_observation = self.gray_process_observation(observation)
-            mobile_observation = self._preprocess_observation(observation)
-            return (self.image_module(mobile_observation), reward, done, info), observation[0]
+        if self.mobilenet:
+            if self.autoencoder:
+                observation = self.autoencoder.predict(observation[None,:])[0]
+            observation = self._preprocess_observation(observation)
+            return (self.image_module(observation), reward, done, info), observation
         elif self.gray_scale:
-            return (self.gray_process_observation(observation), reward, done, info), observation[0]
+            gray_observation = self.gray_process_observation(observation)
+            if self.autoencoder:
+                gray_observation = self.autoencoder.predict(gray_observation[None,:])[0]
+            return (gray_observation, reward, done, info), observation
         else:
             return (self._preprocess_observation(observation), reward, done, info), observation
 
