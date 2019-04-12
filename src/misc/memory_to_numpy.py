@@ -3,8 +3,9 @@ import argparse
 import pickle
 import sys
 import os
+from PIL import Image
 
-def convert(memory_filename, output_filename):
+def convert(memory_filename, output_filename, images_dir=None):
     with open(memory_filename, 'rb') as mf:
         memory = pickle.load(mf)
 
@@ -42,10 +43,18 @@ def convert(memory_filename, output_filename):
         big_memory_dict[key] = np.array(big_memory_dict[key])
         print('{}: shape {}'.format(key,big_memory_dict[key].shape))
 
-    print('Saving pickled dictionary with keys {} to {} ...'.format(big_memory_dict.keys(), output_filename))
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    with open(output_filename, 'wb') as of:
-        pickle.dump(big_memory_dict, of)
+    if images_dir is not None:
+        print('Saving images to {} ...'.format(images_dir))
+        os.makedirs(images_dir, exist_ok=True)
+        for i, obs in enumerate(big_memory_dict['obs']):
+            filename = os.path.join(images_dir, '{}.png'.format(i))
+            img = Image.fromarray(np.array(obs * 255., dtype=np.uint8))
+            img.save(filename)
+    if output_filename is not None:
+        print('Saving pickled dictionary with keys {} to {} ...'.format(big_memory_dict.keys(), output_filename))
+        os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+        with open(output_filename, 'wb') as of:
+            pickle.dump(big_memory_dict, of)
     print('Done')
 
 
@@ -53,10 +62,12 @@ if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser('render video visualizing memory from games')
     parser.add_argument('--memory', type=str, required=True, help='memory filename')
-    parser.add_argument('--output', type=str, default='./memories', help='filename of an extracted dict of numpy arrays')
+    parser.add_argument('--output', type=str, default=None, help='filename of an extracted dict of numpy arrays')
+    parser.add_argument('--images', type=str, default=None, help='if provided, will store all images from the memory to this dir')
     args = parser.parse_args()
 
     memory_filename = args.memory
     output_filename = args.output
+    images_dir = args.images
 
-    convert(memory_filename, output_filename)
+    convert(memory_filename, output_filename, images_dir)

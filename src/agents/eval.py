@@ -16,13 +16,13 @@ import tensorflow_hub as hub
 from tensorflow import keras
 
 from collections import Counter
+from functools import reduce
 
 from src.agents.a3c import ActorCriticModel as A3CModel
 from src.agents.a3c import Memory, ProbabilityDistribution
 from src.agents.curiosity import ActorCriticModel as CuriosityModel
 
 def average_level(histogram):
-        histogram = [.953, .853, .563, .521, .656]
         inverse_histogram = list(map(lambda x: 1 - x, histogram))
         max_level = len(histogram)
         avg_level = 0
@@ -122,7 +122,6 @@ class MasterAgent():
             data = res_queue.get()
             if data is not None:
                 floor, passed = data
-
                 all_floors[floor,passed] += 1
                 floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
                 print("Floor histogram: {}".format(floor_hist))
@@ -208,8 +207,8 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            # floor = np.random.randint(0, self.max_floor)
-            floor = 1
+            seed = self.env._obstacle_tower_env.seed(np.random.randint(0, 100))
+            floor = np.random.randint(0, self.max_floor)
             self.env.floor(floor)
             state, obs = self.env.reset()
             rolling_average_state = state
@@ -257,6 +256,7 @@ class Worker(threading.Thread):
                 state = new_state
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
+            print("Environment Seed: {}".format(self.env._obstacle_tower_env._seed))
             print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
             if passed:
                 self.result_queue.put((floor,0))
