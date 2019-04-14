@@ -577,7 +577,7 @@ class Worker(threading.Thread):
             pickle_file = open(pickle_path, 'wb+')
             pickle.dump(mem, pickle_file)
             pickle_file.close()
-        print("Memory saved to {}".format(pickle_path))
+            print("Memory saved to {}".format(pickle_path))
 
         # Metrics logging and saving
         ep_floor = mem.floors[-1]
