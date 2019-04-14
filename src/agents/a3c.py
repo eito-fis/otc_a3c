@@ -597,7 +597,7 @@ class Worker(threading.Thread):
                 print("saving best model to {}, "
                     "episode score: {}".format(self.save_path, ep_reward))
                 self.global_model.save_weights(os.path.join(self.save_path, 'best_model.h5'))
-                worker.best_score = ep_reward
+                Worker.best_score = ep_reward
 
         # Save model and logs for tensorboard
         if current_episode % self.log_period == 0:
