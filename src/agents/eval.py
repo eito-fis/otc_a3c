@@ -110,8 +110,8 @@ class MasterAgent():
                    curiosity=self.curiosity,
                    max_episodes=self.train_steps,
                    memory_path=self.memory_path,
-                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                   #save_path=self.save_path) for i in range(1)]
+                #    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
+                   save_path=self.save_path) for i in range(1)]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -121,7 +121,7 @@ class MasterAgent():
         while True:
             data = res_queue.get()
             if data is not None:
-                floor, passed = data
+                seed, floor, passed = data
                 all_floors[floor,passed] += 1
                 floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
                 print("Floor histogram: {}".format(floor_hist))
@@ -207,7 +207,8 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            seed = self.env._obstacle_tower_env.seed(np.random.randint(0, 100))
+            seed = np.random.randint(0, 100)
+            self.env._obstacle_tower_env.seed(seed)
             floor = np.random.randint(0, self.max_floor)
             self.env.floor(floor)
             state, obs = self.env.reset()
@@ -256,10 +257,9 @@ class Worker(threading.Thread):
                 state = new_state
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
-            print("Environment Seed: {}".format(self.env._obstacle_tower_env._seed))
-            print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
+            print("Episode {} | Seed {} | Floor {} | Reward {}".format(current_episode, seed, floor, total_reward))
             if passed:
-                self.result_queue.put((floor,0))
+                self.result_queue.put((seed,floor,0))
             else:
                 if self.memory_path is not None:
                     output_filepath = os.path.join(self.memory_path, "_worker{}_episode{}".format(self.worker_idx, current_episode))
@@ -267,7 +267,7 @@ class Worker(threading.Thread):
                     print("Saving memory to output file path {}".format(output_filepath))
                     output_file = open(output_filepath, 'wb+')
                     pickle.dump(mem, output_file)
-                self.result_queue.put((floor,1))
+                self.result_queue.put((seed,floor,1))
             
             Worker.global_episode += 1
 
