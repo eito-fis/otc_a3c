@@ -8,26 +8,12 @@ import tensorflow_hub as hub
 
 from PIL import Image
 
-class AutoEncoder(tf.keras.Model):
-  def __init__(self, embedding_size=128, input_size=1280):
-    super(AutoEncoder, self).__init__()
-    self.dense2 = tf.keras.layers.Dense(embedding_size, activation='relu')
-    self.dense4 = tf.keras.layers.Dense(input_size, activation='sigmoid')
-    
-  def call(self, data):
-    data = self.dense2(data)
-    _ = self.dense4(data)
-    return data
-
 class WrappedKerasLayer(tf.keras.layers.Layer):
-    def __init__(self, retro, mobilenet, deep_module_path):
+    def __init__(self, retro, mobilenet):
         super(WrappedKerasLayer, self).__init__()
-        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2", output_shape=[1280], trainable=False)
-        if deep_module_path:
-            self.deep_module = AutoEncoder()
-            self.deep_module(np.random.random(1280)[None, :])
-            self.deep_module.load_weights(deep_module_path)
-        else: self.deep_module = None
+        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
+                                    output_shape=[1280],
+                                    trainable=False)
         if mobilenet:
             self.input_spec = (1, 224, 224, 3)
         else:
@@ -37,9 +23,6 @@ class WrappedKerasLayer(tf.keras.layers.Layer):
         _input = np.reshape(np.array(_input), self.input_spec)
         _input = tf.convert_to_tensor(_input, dtype=tf.float32)
         tensor_var = tf.convert_to_tensor(np.array(self.layer(_input)))
-        #tensor_var = tensorvar / tf.maximum(tensor_var)
-        #if self.deep_module:
-        #    tensor_var = self.deep_module(tensor_var)
         tensor_var = tf.squeeze(tensor_var)
         return tensor_var
 
@@ -54,10 +37,10 @@ class WrappedObstacleTowerEnv():
         timeout_wait=30,
         realtime_mode=False,
         num_actions=3,
+        stack_size=4,
         mobilenet=False,
         gray_scale=False,
         floor=0,
-        deep_module_path=None
         ):
         '''
         Arguments:
@@ -71,63 +54,73 @@ class WrappedObstacleTowerEnv():
           realtime_mode: Whether to render the environment window image and run environment at realtime.
         '''
 
-        self._obstacle_tower_env = ObstacleTowerEnv(environment_filename, docker_training, worker_id, retro, timeout_wait, realtime_mode)
-        self._obstacle_tower_env.floor(floor)
-        self._flattener = ActionFlattener([3,3,2,3])
-        self._action_space = self._flattener.action_space
+        self._obstacle_tower_env = ObstacleTowerEnv(environment_filename,
+                                                    docker_training,
+                                                    worker_id,
+                                                    retro,
+                                                    timeout_wait,
+                                                    realtime_mode)
+        if floor is not 0:
+            self._obstacle_tower_env.floor(floor)
+        self.start_floor = floor
+        self.floor = floor
+
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
         if mobilenet:
-            self.image_module = WrappedKerasLayer(retro, self.mobilenet, deep_module_path)
+            self.mobilenet = WrappedKerasLayer(retro, self.mobilenet)
             self.state_size = [1280]
         elif gray_scale:
             self.state_size = [84, 84, 1]
         else:
             self.state_size = [168, 168, 3]
-        self._done = False
+
+        self.stack_size = stack_size
+        self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
+        self.total_reward = 0
+
         self.id = worker_id
 
-    def action_spec(self):
-        return self._action_spec
-
-    def observation_spec(self):
-        return self._observation_spec
-
-    def gray_process_observation(self, observation):
-        observation = observation[0]
+    def gray_preprocess_observation(self, observation):
+        '''
+        Re-sizes obs to 84x84 and compresses to grayscale
+        '''
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((84, 84), Image.NEAREST)
-        grey_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
-        return grey_observation / 255
+        gray_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
+        return gray_observation / 255
 
-    def _preprocess_observation(self, observation):
+    def mobile_preprocess_observation(self, observation):
         """
-        Re-sizes visual observation to 84x84
+        Re-sizes obs to 224x224 for mobilenet
         """
-        observation = observation[0]
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((224, 224), Image.NEAREST)
         return np.array(obs_image)
 
     def reset(self):
-        observation = self._obstacle_tower_env.reset()
-        self._done = False
+        # Reset env, stack and floor
+        state = self._obstacle_tower_env.reset()
+        self.floor = self.start_floor
+        self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
+        self.total_reward = 0
+
+        # Preprocess current obs and add to stack
+        observation = state[0]
         if self.mobilenet:
-            #gray_observation = self.gray_process_observation(observation)
-            image_observation = self._preprocess_observation(observation)
-            observation = (observation[0] * 255).astype(np.uint8)
-            return self.image_module(image_observation), observation[0]
+            observation = self.mobile_preprocess_observation(observation)
         elif self.gray_scale:
-            return self.grey_process_observation(observation), observation[0]
-        else:
-            return self._preprocess_observation(observation), observation
+            observation = self.gray_preprocess_observation(observation)
+        self.stack = self.stack[1:] + [observation]
+
+        # Convert floor into an array so it can be fed into the network
+        _floor_arry = np.array([self.floor]).astype(np.float32)
+        return (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
 
     def step(self, action):
-        #if self._done:
-        #    return self.reset()
-
+        # Convert int action to vector required by the env
         if action == 0: # forward
             action = [1, 0, 0, 0]
         elif action == 1: # rotate camera left
@@ -143,21 +136,34 @@ class WrappedObstacleTowerEnv():
         elif action == 7:
             action = [0, 0, 0, 2]
 
-
-        observation, reward, done, info = self._obstacle_tower_env.step(action)
-        self._done = done
-
-        if self.mobilenet: # OBSERVATION MUST BE RESIZED BEFORE PASSING TO image_module
-            #gray_observation = self.gray_process_observation(observation)
-            mobile_observation = self._preprocess_observation(observation)
-            return self.image_module(mobile_observation), reward, done, info, observation[0]
-        elif self.gray_scale:
-            return self.gray_process_observation(observation), reward, done, info, observation[0]
+        # Take the step and record data
+        state, reward, done, info = self._obstacle_tower_env.step(action)
+        if reward >= 1: self.floor += 1
+        self.total_reward += reward
+        
+        if done:
+            # Save info and reset when an episode ends
+            info["episode_info"] = {"floor": self.floor, "total_reward": self.total_reward}
+            state = self.reset()
         else:
-            return self._preprocess_observation(observation), reward, done, info, observation
+            # Preprocess current obs and add to stack
+            observation = state[0]
+            if self.mobilenet:
+                observation = self.mobile_preprocess_observation(observation)
+            elif self.gray_scale:
+                observation = self.gray_preprocess_observation(observation)
+            self.stack = self.stack[1:] + [observation]
+
+            # Convert floor into an array so it can be fed into the network
+            _floor_arry = np.array([self.floor]).astype(np.float32)
+            # Build our state
+            state = (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
+
+        return state, reward, done, info
 
     def close(self):
         self._obstacle_tower_env.close()
 
     def floor(self, floor):
         self._obstacle_tower_env.floor(floor)
+        self.start_floor = floor

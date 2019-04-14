@@ -2,8 +2,6 @@
 import numpy as np
 from multiprocessing import Process, Pipe
 
-# This class is to run multiple environments at the same time.
-
 def worker(remote, env_fn_wrapper, idx):
     '''
     The function that each of our processes runs. Takes commands from the
@@ -17,19 +15,17 @@ def worker(remote, env_fn_wrapper, idx):
         # Recieve the command and any associated data
         cmd, data = remote.recv()
         if cmd == 'step':
-            state, reward, done, info, ob = env.step(data)
+            state, reward, done, info = env.step(data)
             total_info = info.copy()
-            if done:
-                state, ob = env.reset()
-            remote.send((state, reward, done, total_info, ob))
+            remote.send((state, reward, done, total_info))
         elif cmd == 'reset':
-            ob = env.reset()
-            remote.send(ob)
+            state = env.reset()
+            remote.send(state)
         elif cmd == 'close':
             remote.close()
             break
-        elif cmd == 'get_state_size':
-            remote.send(env.state_size)
+        elif cmd == 'get_size':
+            remote.send((env.state_size, env.stack_size))
         else:
             raise NotImplementedError
 
@@ -63,13 +59,15 @@ class ParallelEnv():
         # Build processes
         self.ps = [Process(target=worker, args=(work_remote, CloudpickleWrapper(env_fn), idx))
                    for idx, (work_remote, env_fn) in enumerate(zip(self.work_remotes, env_fns))]
+
         # Start processes
         for p in self.ps:
+            p.daemon = True
             p.start()
 
         # Get env state size
-        self.remotes[0].send(('get_state_size', None))
-        self.state_size = self.remotes[0].recv()
+        self.remotes[0].send(('get_size', None))
+        self.state_size, self.stack_size = self.remotes[0].recv()
 
     def step(self, actions):
         # Send each environment it's action...
@@ -79,9 +77,14 @@ class ParallelEnv():
         # ..then wait for the response from each one
         results = [remote.recv() for remote in self.remotes]
         
-        # Split responses up into individual lists and return
-        states, rewards, dones, infos, obs = zip(*results)
-        return np.stack(states), np.stack(rewards), np.stack(dones), infos, np.stack(obs)
+        # Split responses up into individual lists
+        _states, rewards, dones, infos = zip(*results)
+
+        # Convert list of tuples into array of tuples
+        states = np.empty(len(_states), dtype=object)
+        states[:] = _states
+
+        return states, np.stack(rewards), np.stack(dones), infos
 
     def reset(self):
         # Send each env a reset command...
@@ -89,11 +92,12 @@ class ParallelEnv():
             remote.send(('reset', None))
 
         # ...then wait for the response from each one
-        results = [remote.recv() for remote in self.remotes]
+        _states = [remote.recv() for remote in self.remotes]
 
-        # Split responses up into individual lists and return
-        states, obs = zip(*results)
-        return np.stack(states), np.stack(obs)
+        # Convert list of tuples into array of tuples
+        states = np.empty(len(_states), dtype=object)
+        states[:] = _states
+        return states
 
     def close(self):
         # Close each env, then end each process
@@ -106,6 +110,10 @@ class ParallelEnv():
     def num_envs(self):
         return len(self.remotes)
 
+
+
+
+
 if __name__ == '__main__':
     import tensorflow as tf
     from src.a2c.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
@@ -114,12 +122,20 @@ if __name__ == '__main__':
     def env_func(idx):
         return WrappedObstacleTowerEnv(env_filename,
                                        worker_id=idx,
-                                       mobilenet=True,
                                        realtime_mode=True)
-
-    func_list = [env_func for _ in range(16)]
+    func_list = [env_func for _ in range(4)]
     parallel_env = ParallelEnv(func_list)
-    while True:
-        parallel_env.step([1 for _ in range(16)])
 
+    states = parallel_env.reset()
+    print(states)
+    print(states.shape)
+    input()
+
+    while True:
+        states, rewards, dones, infos = parallel_env.step([1 for _ in range(4)])
+        print(states)
+        print("State shape: {}".format(states.shape))
+        print("Rewards shape: {}".format(rewards.shape))
+        print("Dones shape: {}".format(dones.shape))
+        input()
 
