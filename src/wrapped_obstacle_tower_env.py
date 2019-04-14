@@ -103,9 +103,9 @@ class WrappedObstacleTowerEnv():
         if action == 0: # forward
             action = [1, 0, 0, 0]
         elif action == 1: # rotate camera left
-            action = [0, 1, 0, 0]
+            action = [1, 1, 0, 0]
         elif action == 2: # rotate camera right
-            action = [0, 2, 0, 0]
+            action = [1, 2, 0, 0]
         elif action == 3: # jump forward
             action = [1, 0, 1, 0]
         elif action == 5:

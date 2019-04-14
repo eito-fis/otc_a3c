@@ -18,7 +18,7 @@ from tensorflow import keras
 from collections import Counter
 
 from src.agents.a3c import ActorCriticModel as A3CModel
-from src.agents.a3c import Memory, ProbabilityDistribution
+from src.agents.a3c import Memory
 from src.agents.curiosity import ActorCriticModel as CuriosityModel
 
 class MasterAgent():
@@ -29,8 +29,8 @@ class MasterAgent():
                  num_actions=2,
                  state_size=[4],
                  stack_size=6,
-                 sparse_stack_size=4,
-                 action_stack_size=4,
+                 sparse_stack_size=0,
+                 action_stack_size=0,
                  max_floor=5,
                  boredom_thresh=10,
                  actor_fc=None,
@@ -67,8 +67,6 @@ class MasterAgent():
             self.global_model = A3CModel(num_actions=self.num_actions,
                                          state_size=self.state_size,
                                          stack_size=self.stack_size,
-                                         sparse_stack_size=sparse_stack_size,
-                                         action_stack_size=self.action_stack_size,
                                          actor_fc=self.actor_fc,
                                          critic_fc=(1024,512))
 
@@ -164,8 +162,6 @@ class Worker(threading.Thread):
             self.local_model = A3CModel(num_actions=self.num_actions,
                                         state_size=self.state_size,
                                         stack_size=self.stack_size,
-                                        sparse_stack_size=sparse_stack_size,
-                                        action_stack_size=self.action_stack_size,
                                         actor_fc=actor_fc,
                                         critic_fc=(1024,512))
         self.local_model.set_weights(self.global_model.get_weights())
@@ -218,12 +214,13 @@ class Worker(threading.Thread):
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
                     action = self.local_model.actor_model.predict(stacked_state[None, :])
-                    action = self.local_model.dist.predict(action)[0]
+                    action = np.squeeze(tf.nn.softmax(action).numpy())
+                    action = np.argmax(action)
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
                 total_reward += reward
-                mem.store(state, action, reward)
+                mem.store(state, action, reward, floor)
                 if reward == 1:
                     passed = True
                     break
