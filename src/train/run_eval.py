@@ -26,10 +26,6 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-# import time
-# import matplotlib
-# matplotlib.use('PS')
-
 def average_level(histogram):
         inverse_histogram = list(map(lambda x: 1 - x, histogram))
         max_level = len(histogram)
@@ -72,8 +68,6 @@ def main(args,
                                env_func=env_func,
                                curiosity=args.curiosity,
                                stack_size=stack_size,
-                               sparse_stack_size=sparse_stack_size,
-                               action_stack_size=action_stack_size,
                                actor_fc=actor_fc,
                                conv_size=conv_size,
                                memory_path=args.memory_dir,

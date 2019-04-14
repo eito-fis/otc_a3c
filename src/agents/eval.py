@@ -41,7 +41,7 @@ class MasterAgent():
                  train_steps=1000,
                  env_func=None,
                  curiosity=False,
-                 num_actions=2,
+                 num_actions=4,
                  state_size=[4],
                  stack_size=6,
                  sparse_stack_size=4,
@@ -84,8 +84,6 @@ class MasterAgent():
             self.global_model = A3CModel(num_actions=self.num_actions,
                                          state_size=self.state_size,
                                          stack_size=self.stack_size,
-                                         sparse_stack_size=sparse_stack_size,
-                                         action_stack_size=self.action_stack_size,
                                          actor_fc=self.actor_fc,
                                          critic_fc=(1024,512),
                                          conv_size=self.conv_size)
@@ -114,7 +112,7 @@ class MasterAgent():
                    max_episodes=self.train_steps,
                    memory_path=self.memory_path,
                    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                   #save_path=self.save_path) for i in range(1)]
+                #    save_path=self.save_path) for i in range(1)]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -188,8 +186,6 @@ class Worker(threading.Thread):
             self.local_model = A3CModel(num_actions=self.num_actions,
                                         state_size=self.state_size,
                                         stack_size=self.stack_size,
-                                        sparse_stack_size=sparse_stack_size,
-                                        action_stack_size=self.action_stack_size,
                                         actor_fc=actor_fc,
                                         critic_fc=(1024,512),
                                         conv_size=conv_size)
@@ -224,31 +220,23 @@ class Worker(threading.Thread):
             total_reward = 0
             done = False
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
-            sparse_states = [np.random.random(state.shape) for _ in range(self.sparse_stack_size)]
-            prev_actions = [np.zeros(self.num_actions) for _ in range(self.action_stack_size)]
-            boredom_actions = []
             passed = False
             while not done:
                 prev_states = prev_states[1:] + [state]
-                if time_count > 0 and self.action_stack_size > 0:
-                    one_hot_action = np.zeros(self.num_actions)
-                    one_hot_action[action] = 1
-                    prev_actions = prev_actions[1:] + [one_hot_action]
-                if self.sparse_stack_size > 0 and time_count % self.sparse_update == 0:
-                    sparse_states = sparse_states[1:] + [state]
                 _deviation = tf.reduce_sum(tf.math.squared_difference(rolling_average_state, state))
                 if time_count > 10 and _deviation < self.boredom_thresh:
                     possible_actions = np.delete(np.array([range(self.num_actions)]), action)
                     action = np.random.choice(possible_actions)
                 else:
-                    stacked_state = np.concatenate(prev_states + sparse_states + prev_actions, axis=-1).astype(np.float32)
-                    action, _ = self.local_model(stacked_state[None, :])
+                    stacked_state = np.concatenate(prev_states, axis=-1).astype(np.float32)
+                    action = self.local_model.actor_model(stacked_state[None, :])
+                    action = np.squeeze(tf.nn.softmax(action).numpy())
                     action = np.argmax(action)
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
                 total_reward += reward
-                mem.store(state, action, reward)
+                mem.store(state, action, reward, floor)
                 if reward >= 1:
                     passed = True
                     break
