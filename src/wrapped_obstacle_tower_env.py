@@ -151,8 +151,7 @@ class WrappedObstacleTowerEnv():
         if self.mobilenet:
             if self.autoencoder:
                 observation = self.autoencoder.predict(observation[None,:])[0]
-            observation = self._preprocess_observation(observation)
-            return self.image_module(observation), observation
+            return self.image_module(self._preprocess_observation(observation)), observation
         elif self.gray_scale:
             gray_observation = self.gray_process_observation(observation)
             if self.autoencoder:
@@ -188,8 +187,7 @@ class WrappedObstacleTowerEnv():
         if self.mobilenet:
             if self.autoencoder:
                 observation = self.autoencoder.predict(observation[None,:])[0]
-            observation = self._preprocess_observation(observation)
-            return (self.image_module(observation), reward, done, info), observation
+            return (self.image_module(self._preprocess_observation(observation)), reward, done, info), observation
         elif self.gray_scale:
             gray_observation = self.gray_process_observation(observation)
             if self.autoencoder:

@@ -17,10 +17,12 @@ from tensorflow import keras
 
 from collections import Counter
 from functools import reduce
+import cv2
 
 from src.agents.a3c import ActorCriticModel as A3CModel
 from src.agents.a3c import Memory, ProbabilityDistribution
 from src.agents.curiosity import ActorCriticModel as CuriosityModel
+from src.wrapped_obstacle_tower_env import WrappedKerasLayer
 
 def average_level(histogram):
         inverse_histogram = list(map(lambda x: 1 - x, histogram))
@@ -36,6 +38,71 @@ def average_level(histogram):
             avg_level += level * fail_ratio
         final_avg_level = avg_level + reduce((lambda x, y: x * y), histogram) * max_level
         print("Average level: {}".format(final_avg_level))
+
+IMAGE_SHAPE = (168, 168, 3)
+BLUR_COEFF = 20
+MASK_RADIUS = 105
+STRIDE = 8
+
+def blur_images(images, radius):
+  return np.array([cv2.blur(image, (radius,radius)) for image in images])
+#   return np.array([cv2.GaussianBlur(image, (5,5), 0) for image in source_images])
+
+def generate_mask(image_shape, radius, x, y):
+  mask_image = np.zeros(image_shape)
+  mask_image[y,x] = 1.
+  mask_image = cv2.GaussianBlur(mask_image, (radius,radius), 0)
+  mask_image = cv2.normalize(mask_image, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+  return mask_image
+
+def generate_masks(image_shape, radius, stride):
+  masks = []
+  for y in range(image_shape[0])[::stride]:
+    for x in range(image_shape[0])[::stride]:
+      masks.append(generate_mask(image_shape, radius, x, y))
+  return np.array(masks)
+
+def perturb_image(source_image, blurred_image, mask):
+  result = np.zeros((168,168,3))
+  for y in range(IMAGE_SHAPE[0]):
+    for x in range(IMAGE_SHAPE[1]):
+        if mask[y,x] > 0: result[y,x] = np.multiply(mask[y,x],blurred_image[y,x]) + np.multiply(1-mask[y,x],source_image[y,x])
+  return result
+
+def generate_perturbations(source_image, masks, blur_coeff, stride):
+  perturbed_images = []
+  blurred_image = cv2.blur(source_image, (blur_coeff,blur_coeff))
+  for y in range(IMAGE_SHAPE[0])[::stride]:
+    for x in range(IMAGE_SHAPE[1])[::stride]:
+      print(x//stride + (y//stride)*(IMAGE_SHAPE[0]//stride))
+      perturbed_image = perturb_image(source_image, blurred_image, masks[x//stride + y*IMAGE_SHAPE[0]//stride])
+      perturbed_images.append(perturbed_image)
+  return perturbed_images
+
+def generate_saliency(model, image_module, source_image, prev_states, masks, blur_coeff, stride):
+  saliency_map = np.zeros((168,168))
+  source_input = np.array([cv2.resize(source_image, (224,224))])
+  source_embedding = image_module(source_input)
+  stacked_state = np.concatenate(prev_states + [source_embedding])
+  logits = np.squeeze(model.predict(stacked_state[None,:]))
+  blurred_image = cv2.blur(source_image, (blur_coeff,blur_coeff))
+  for y in range(IMAGE_SHAPE[0])[::stride]:
+    for x in range(IMAGE_SHAPE[1])[::stride]:
+      mask = masks[x//stride + (y//stride)*(IMAGE_SHAPE[0]//stride)]
+      perturbed_image = perturb_image(source_image, blurred_image, mask)
+      perturbed_input = np.array([cv2.resize(perturbed_image, (224,224))]).astype(np.float32)
+      perturbed_embedding = image_module(perturbed_input)
+      stacked_state = np.concatenate(prev_states + [perturbed_embedding])
+      perturbed_logits = np.squeeze(model.predict(stacked_state[None,:]))
+      saliency = np.square(sum(logits - perturbed_logits)) / 2
+      saliency_map = saliency_map + np.multiply(saliency, mask)
+    #   saliency_map[y,x] = saliency
+  saliency_map = cv2.normalize(saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+  rgb_saliency_map = (np.zeros(IMAGE_SHAPE) + saliency_map[:,:,None]) * [1,0,0]
+  return rgb_saliency_map
+
+masks = generate_masks((168,168), MASK_RADIUS, STRIDE)
+image_module = WrappedKerasLayer(retro=False, mobilenet=True)
 
 class MasterAgent():
     def __init__(self,
@@ -121,7 +188,7 @@ class MasterAgent():
         while True:
             data = res_queue.get()
             if data is not None:
-                seed, floor, passed = data
+                floor, passed = data
                 all_floors[floor,passed] += 1
                 floor_hist = [p / (p + not_p) if p + not_p > 0 else -1 for p, not_p in all_floors]
                 print("Floor histogram: {}".format(floor_hist))
@@ -207,9 +274,9 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            seed = np.random.randint(0, 100)
-            self.env._obstacle_tower_env.seed(seed)
-            floor = np.random.randint(0, self.max_floor)
+            seed = self.env._obstacle_tower_env.seed(np.random.randint(0, 100))
+            # floor = np.random.randint(0, self.max_floor)
+            floor = 0
             self.env.floor(floor)
             state, obs = self.env.reset()
             rolling_average_state = state
@@ -239,9 +306,15 @@ class Worker(threading.Thread):
                     probs = np.zeros(self.num_actions)
                 else:
                     stacked_state = np.concatenate(prev_states + sparse_states + prev_actions)
-                    probs = self.local_model.actor_model.predict(stacked_state[None, :])
-                    probs = tf.nn.softmax(probs).numpy()
+                    logits = self.local_model.actor_model.predict(stacked_state[None, :])
+                    probs = tf.nn.softmax(logits).numpy()
                     action = np.argmax(probs[0])
+                
+                print("Generating saliency...")
+                saliency_map = generate_saliency(self.local_model.actor_model, image_module, obs, prev_states[:-1], masks, BLUR_COEFF, STRIDE)
+                normed_map = cv2.normalize(saliency_map, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                cv2.imwrite('saliency_output/saliency_map_{}.png'.format(time_count), cv2.cvtColor(normed_map, cv2.COLOR_BGR2RGB))
+                print("Done.")
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
@@ -249,6 +322,7 @@ class Worker(threading.Thread):
                 mem.store(state, action, reward)
                 mem.probs.append(probs)
                 mem.obs.append(obs)
+                mem.novelty.append(saliency_map)
                 if reward == 1:
                     passed = True
                     break
@@ -257,17 +331,18 @@ class Worker(threading.Thread):
                 state = new_state
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
-            print("Episode {} | Seed {} | Floor {} | Reward {}".format(current_episode, seed, floor, total_reward))
+            print("Environment Seed: {}".format(self.env._obstacle_tower_env._seed))
+            print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
             if passed:
-                self.result_queue.put((seed,floor,0))
-            else:
-                if self.memory_path is not None:
-                    output_filepath = os.path.join(self.memory_path, "_worker{}_episode{}".format(self.worker_idx, current_episode))
-                    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
-                    print("Saving memory to output file path {}".format(output_filepath))
-                    output_file = open(output_filepath, 'wb+')
-                    pickle.dump(mem, output_file)
-                self.result_queue.put((seed,floor,1))
+                self.result_queue.put((floor,0))
+            # else:
+            if self.memory_path is not None:
+                output_filepath = os.path.join(self.memory_path, "_worker{}_episode{}".format(self.worker_idx, current_episode))
+                os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+                print("Saving memory to output file path {}".format(output_filepath))
+                output_file = open(output_filepath, 'wb+')
+                pickle.dump(mem, output_file)
+            self.result_queue.put((floor,1))
             
             Worker.global_episode += 1
 
