@@ -17,24 +17,25 @@ import gin
 import logging
 import argparse
 
-from src.agents.a3c import MasterAgent, Memory
-from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
+from src.a2c.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
+from src.a2c.a2c_agent import A2CAgent
 
 import numpy as np
 import tensorflow as tf
 
 def main(args,
-         train_steps=1,
+         train_steps=2500,
          entropy_discount=0.01,
          value_discount=0.5,
          learning_rate=0.00000042,
          num_steps=650,
-         env_func=env_func,
          num_envs=4,
          num_actions=4,
          actor_fc=[1024,512],
          critic_fc=[1024,512],
-         conv_size=((8,4,32), (4,2,64), (3,1,64))):
+         conv_size=((8,4,32), (4,2,64), (3,1,64)),
+         logging_period=1,
+         checkpoint_period=10):
 
     '''
     Train an A2C agent
@@ -55,13 +56,13 @@ def main(args,
                                        worker_id=idx,
                                        mobilenet=args.mobilenet,
                                        gray_scale=args.gray,
-                                       realtime_mode=args.realtime)
+                                       realtime_mode=args.render)
 
     print("Building agent...")
     agent = A2CAgent(train_steps=train_steps,
                      entropy_discount=entropy_discount,
                      value_discount=value_discount,
-                     learning_rate=learning-rate,
+                     learning_rate=learning_rate,
                      num_steps=num_steps,
                      env_func=env_func,
                      num_envs=num_envs,
@@ -69,7 +70,10 @@ def main(args,
                      actor_fc=actor_fc,
                      critic_fc=critic_fc,
                      conv_size=conv_size,
-                     output_dir=args.output_dir)
+                     logging_period=logging_period,
+                     checkpoint_period=checkpoint_period,
+                     output_dir=args.output_dir,
+                     restore_dir=args.restore)
     print("Agent built!")
 
     print("Strating train...")
@@ -78,12 +82,12 @@ def main(args,
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('A3C OTC')
+    parser = argparse.ArgumentParser('Train A2C')
     # Directory path arguments
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='data')
+        default='/tmp/a2c')
 
     # File path arguments
     parser.add_argument(

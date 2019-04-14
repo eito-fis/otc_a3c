@@ -39,7 +39,7 @@ class A2CAgent():
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
-                 load_):
+                 restore_dir=None):
 
         # Build environment
         env_func_list = [env_func for _ in range(num_envs)]
@@ -52,6 +52,8 @@ class A2CAgent():
                                       actor_fc=actor_fc,
                                       critic_fc=critic_fc,
                                       conv_size=conv_size)
+        if restore_dir != None:
+            self.model.load_weights(restore_dir)
         
         # Build runner
         self.runner = Runner(env=self.env,
@@ -73,9 +75,9 @@ class A2CAgent():
         self.checkpoint_period = checkpoint_period
         
         # Build logging directories
-        self.log_dir = os.path.join(output_dir, "logs")
+        self.log_dir = os.path.join(output_dir, "logs/")
         os.makedirs(os.path.dirname(self.log_dir), exist_ok=True)
-        self.checkpoint_dir = os.path.join(output_dir, "checkpoints")
+        self.checkpoint_dir = os.path.join(output_dir, "checkpoints/")
         os.makedirs(os.path.dirname(self.checkpoint_dir), exist_ok=True)
 
         # Build summary writer
@@ -108,13 +110,14 @@ class A2CAgent():
                              (entropy_loss * self.entropy_discount) + \
                              (value_loss * self.value_discount)
 
-            # Calculate gradient
+            # Calculate and apply gradient
             total_grads = tape.gradient(total_loss, self.model.trainable_weights)
-            # Apply gradient
             self.opt.apply_gradients(zip(total_grads, self.model.trainable_weights))
 
             # Log data
             self.logging(b_rewards, b_values, ep_infos, entropy_loss, policy_loss, value_loss, i)
+
+            print("\n")
 
     def logging(self, rewards, values, ep_infos, entropy_loss, policy_loss, value_loss, i):
         # Pull specific info from info array and store in queue
@@ -126,27 +129,24 @@ class A2CAgent():
         avg_reward = 0 if len(self.reward_queue) == 0 else sum(self.reward_queue) / len(self.reward_queue)
         explained_variance = self.explained_variance(values, rewards)
         
-        print("| Average Floor: {} | Average Reward: {} |".format(avg_floor, avg_reward))
+        print("| Episode: {} | Average Floor: {} | Average Reward: {} |".format(i, avg_floor, avg_reward))
         print("| Entropy Loss: {} | Policy Loss: {} | Value Loss: {} |".format(entropy_loss, policy_loss, value_loss))
         print("| Explained Variance: {} |".format(explained_variance))
 
         # Periodically log
-        if i % self.logging_period:
+        if i % self.logging_period == 0:
             with self.summary_writer.as_default():
                 tf.summary.scalar("Average Floor", avg_floor, i)
                 tf.summary.scalar("Average Reward", avg_reward, i)
                 tf.summary.scalar("Entropy Loss", entropy_loss, i)
                 tf.summary.scalar("Policy Loss", policy_loss, i)
                 tf.summary.scalar("Value Loss", value_loss, i)
-                tf.summary.scalar("Explained Variance", explained_variance)
+                tf.summary.scalar("Explained Variance", explained_variance, i)
         # Periodically save checkoints
-        if i % self.checkpoint_period:
-            model_save_path = os.path.join(self.checkpoint_dir, "model_{].h5".format(i))
+        if i % self.checkpoint_period == 0:
+            model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
             self.model.save_weights(model_save_path)
             print("Model saved to {}".format(model_save_path))
-        
-        # Pretty
-        print("===" * 20)
 
     def explained_variance(self, y_pred, y_true):
         """
