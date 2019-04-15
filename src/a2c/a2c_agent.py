@@ -117,6 +117,7 @@ class A2CAgent():
 
             # Log data
             self.logging(b_rewards, b_values, ep_infos, entropy_loss, policy_loss, value_loss, i)
+            print(b_values)
 
             print("\n")
 
