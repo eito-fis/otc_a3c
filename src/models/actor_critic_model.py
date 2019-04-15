@@ -69,7 +69,7 @@ class ActorCriticModel(tf.keras.Model):
 
         # Build the output layers for the actor and critic models
         self.actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits')(actor_x)
-        self.value = tf.keras.layers.Dense(1, name='value', activation='relu')(critic_x)
+        self.value = tf.keras.layers.Dense(1, name='value')(critic_x)
 
         # Build the final actor and critic models
         self.actor_model = tf.keras.models.Model(inputs=[self.model_input], outputs=[self.actor_logits])

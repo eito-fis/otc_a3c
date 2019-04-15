@@ -28,9 +28,9 @@ import tensorflow as tf
 from tensorflow import keras
 
 def main(args,
-         human_train_steps=500,
+         human_train_steps=0,
          human_batch_size=1000,
-         rl_episodes=0,
+         rl_episodes=100,
          num_actions=4,
          state_size=[1280],
          stack_size=4,

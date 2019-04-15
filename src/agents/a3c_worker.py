@@ -22,7 +22,8 @@ def record(episode,
            global_ep_floor,
            result_queue,
            total_loss,
-           num_steps):
+           num_steps,
+           explained_variance):
     """
     Stores score and print statistics.
     Arguments:
@@ -45,7 +46,7 @@ def record(episode,
         global_ep_floor = global_ep_floor * 0.8 + episode_floor * 0.2
 
     # Print metrics
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Moving Average Floor: {} | Episode Floor: {} | Loss: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, global_ep_floor, episode_floor, int(total_loss * 1000) / 1000, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Moving Average Floor: {} | Episode Floor: {} | Loss: {} | Explained Variance: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, global_ep_floor, episode_floor, int(total_loss * 1000) / 1000, explained_variance, num_steps, worker_idx))
 
     # Add metrics to queue
     result_queue.put(global_ep_reward)
@@ -165,6 +166,8 @@ class Worker(threading.Thread):
             current_episode = Worker.global_episode
             save_visual = (self.memory_path != None and current_episode % self.visual_period == 0)
             ep_reward = 0.
+            ep_rewards = []
+            ep_values = []
             ep_steps = 0
             self.ep_loss = 0
 
@@ -209,7 +212,9 @@ class Worker(threading.Thread):
                 if time_count == self.update_freq or done:
                     # Calculate loss based on trajectory
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor)
+                        total_loss, values, rewards  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor)
+                    ep_values.extend(values.tolist())
+                    ep_rewards.extend(rewards)
                     self.ep_loss += total_loss
 
                     # Calculate gradient for local model
@@ -220,7 +225,7 @@ class Worker(threading.Thread):
                     self.local_model.set_weights(self.global_model.get_weights())
                     
                     if done:
-                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss)
+                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss, ep_values, ep_rewards)
                         Worker.global_episode += 1
                     time_count = 0
 
@@ -303,9 +308,9 @@ class Worker(threading.Thread):
         # Discount losses, add together and return
         return policy_loss + \
                (value_loss * self.value_discount) + \
-               (entropy_loss * self.entropy_discount)
+               (entropy_loss * self.entropy_discount), np.squeeze(values.numpy()), discounted_rewards
 
-    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
+    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss, ep_values, ep_rewards):
         '''
         Helper function that logs and saves info
         '''
@@ -320,6 +325,7 @@ class Worker(threading.Thread):
 
         # Metrics logging and saving
         ep_floor = mem.floors[-1]
+        explained_variance = self.explained_variance(ep_values, ep_rewards)
         Worker.global_moving_average_reward, Worker.global_moving_average_floor = record(Worker.global_episode,
                                                                                          ep_reward,
                                                                                          ep_floor,
@@ -328,7 +334,9 @@ class Worker(threading.Thread):
                                                                                          Worker.global_moving_average_floor,
                                                                                          self.result_queue,
                                                                                          self.ep_loss,
-                                                                                         ep_steps)
+                                                                                         ep_steps,
+                                                                                         explained_variance)
+        print(ep_values)
 
         # We must use a lock to save our model and to print to prevent data races.
         if ep_reward > Worker.best_score:
@@ -347,8 +355,25 @@ class Worker(threading.Thread):
                 tf.summary.scalar("Moving Global Average Reward", Worker.global_moving_average_reward, current_episode)
                 tf.summary.scalar("Episode Floor", ep_floor, current_episode)
                 tf.summary.scalar("Moving Global Average Floor", Worker.global_moving_average_floor, current_episode)
+                tf.summary.scalar("Explained Variance", explained_variance, current_episode)
                 tf.summary.scalar("Episode Loss", tf.reduce_sum(total_loss), current_episode)
         if current_episode % self.checkpoint_period == 0:
             _save_path = os.path.join(self.save_path, "worker_{}_model_{}.h5".format(self.worker_idx, current_episode))
             self.local_model.save_weights(_save_path)
             print("Checkpoint saved to {}".format(_save_path))
+
+    def explained_variance(self, y_pred, y_true):
+        """
+        Computes fraction of variance that ypred explains about y.
+        Returns 1 - Var[y-ypred] / Var[y]
+        interpretation:
+            ev=0  =>  might as well have predicted zero
+            ev=1  =>  perfect prediction
+            ev<0  =>  worse than just predicting zero
+        """
+        y_pred = np.array(y_pred)
+        y_true = np.array(y_true)
+        assert y_true.ndim == 1 and y_pred.ndim == 1
+        var_y = np.var(y_true)
+        return 0 if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+
