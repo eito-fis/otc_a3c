@@ -73,8 +73,8 @@ class WrappedObstacleTowerEnv():
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((84, 84), Image.NEAREST)
-        grey_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
-        return grey_observation / 255
+        gray_observation = np.mean(np.array(obs_image),axis=-1,keepdims=True)
+        return gray_observation / 255
 
     def _preprocess_observation(self, observation):
         """
@@ -93,7 +93,7 @@ class WrappedObstacleTowerEnv():
             mobile_observation = self._preprocess_observation(observation)
             return self.image_module(mobile_observation), observation[0]
         elif self.gray_scale:
-            return self.grey_process_observation(observation), observation[0]
+            return self.gray_process_observation(observation), observation[0]
         else:
             return self._preprocess_observation(observation), observation
 
