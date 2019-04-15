@@ -55,12 +55,15 @@ class ParallelEnv():
     def __init__(self, env_fns):
         nenvs = len(env_fns)
         
+        # Multi-processing is by default forked, but Tensorflow isn't fork safe
         multiprocessing.set_start_method("spawn")
 
         # Build pipes for communication to and from processed
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
 
+        # Make sure our sub-processes don't use GPU 
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
         # Build processes
         self.ps = [Process(target=worker, args=(work_remote, CloudpickleWrapper(env_fn), idx))
                    for idx, (work_remote, env_fn) in enumerate(zip(self.work_remotes, env_fns))]
@@ -69,6 +72,8 @@ class ParallelEnv():
         for p in self.ps:
             p.daemon = True
             p.start()
+
+        # Re-enable gpu for our main process
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
         # Get env state size
