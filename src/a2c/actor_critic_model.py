@@ -10,6 +10,7 @@ class ActorCriticModel(tf.keras.Model):
     Arguments:
     num_actions: Number of logits the actor model will output
     state_size: List containing the expected size of the state
+    max_floor: Maximium number of floors reachable
     stack_size: Numer of states we can expect in our stack
     actor_fc: Iterable containing the amount of neurons per layer for the actor model
     critic_fc: Iterable containing the amount of neurons per layer for the critic model
@@ -19,6 +20,8 @@ class ActorCriticModel(tf.keras.Model):
                convolutional layer.
         ex: ((8, 4, 16)) would make 1 convolution layer with an 8x8 kernel, (4, 4) stride
             and 16 filters
+    max_pooling: Whether or not to throw max pooling layers after convolutional layers.
+                 Currently only does (2,2) pooling.
     '''
     def __init__(self,
                  num_actions=None,
@@ -27,7 +30,8 @@ class ActorCriticModel(tf.keras.Model):
                  stack_size=None,
                  actor_fc=None,
                  critic_fc=None,
-                 conv_size=None):
+                 conv_size=None,
+                 max_pooling=False):
         super().__init__()
 
          # Multiply the final dimension of the state by stack_size to get correct input_size
@@ -44,9 +48,12 @@ class ActorCriticModel(tf.keras.Model):
                                             kernel_size=k,
                                             strides=s,
                                             filters=f,
+                                            use_bias=False,
                                             name="conv_{}".format(i))(conv_x)
-            #conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
-            #conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+            conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
+            conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+            if max_pooling:
+                conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
         flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
 
          # Build the fully connected layers for the actor and critic models
@@ -58,7 +65,7 @@ class ActorCriticModel(tf.keras.Model):
         critic_x = tf.keras.layers.concatenate([actor_x, critic_input], name="conv_concat")
 
         # Build the output layers for the actor and critic models
-        actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits', activation="softmax")(actor_x)
+        actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits')(actor_x)
         value = tf.keras.layers.Dense(1, name='value')(critic_x)
 
         # Build the final total model

@@ -97,6 +97,9 @@ class A2CAgent():
                 processed_states = self.model.process_inputs(b_states)
                 logits, values = self.model(processed_states)
 
+                # Model returns un-softmaxed logits
+                logits = tf.nn.softmax(logits)
+
                 # Calculate our entropy loss
                 cce = tf.keras.losses.CategoricalCrossentropy()
                 entropy_loss = cce(tf.stop_gradient(logits), logits) * -1

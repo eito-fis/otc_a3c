@@ -38,7 +38,7 @@ class Runner():
         ep_infos = []
         
         # Rollout on each env for num_steps
-        for _ in tqdm(range(self.num_steps), "Rollout in progress"):
+        for _ in tqdm(range(self.num_steps), "Rollout"):
             # Generate actions, values, and probabilities of the actions sampled
             actions, values = self.model.step(self.states)
 
@@ -48,7 +48,7 @@ class Runner():
             b_dones.append(self.dones)
 
             # Take actions
-            self.states[:], rewards, self.dones, infos = self.env.step(actions)
+            self.states[:], rewards, self.dones[:], infos = self.env.step(actions)
 
             b_rewards.append(rewards)
 
