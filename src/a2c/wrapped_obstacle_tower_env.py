@@ -81,6 +81,7 @@ class WrappedObstacleTowerEnv():
         self.stack_size = stack_size
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
+        self.max_floor = 25
 
         self.id = worker_id
 
@@ -121,8 +122,8 @@ class WrappedObstacleTowerEnv():
             observation = self.gray_preprocess_observation(observation)
         self.stack = self.stack[1:] + [observation]
 
-        # Convert floor into an array so it can be fed into the network
-        _floor_arry = np.array([self.floor]).astype(np.float32)
+        # One hot encode floor
+        _floor_arry = tf.one_hot(self.floor, self.max_floor).numpy()
         return (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
 
     def step(self, action):
@@ -169,8 +170,8 @@ class WrappedObstacleTowerEnv():
                 observation = self.gray_preprocess_observation(observation)
             self.stack = self.stack[1:] + [observation]
 
-            # Convert floor into an array so it can be fed into the network
-            _floor_arry = np.array([self.floor]).astype(np.float32)
+            # One hot encode floor
+            _floor_arry = tf.one_hot(self.floor, self.max_floor).numpy()
             # Build our state
             state = (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
 

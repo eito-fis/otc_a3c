@@ -23,6 +23,7 @@ class ActorCriticModel(tf.keras.Model):
     def __init__(self,
                  num_actions=None,
                  state_size=None,
+                 max_floor=25,
                  stack_size=None,
                  actor_fc=None,
                  critic_fc=None,
@@ -31,11 +32,10 @@ class ActorCriticModel(tf.keras.Model):
 
          # Multiply the final dimension of the state by stack_size to get correct input_size
         state_size = state_size[:-1] + [state_size[-1] * stack_size]
-        conv_state_size = state_size
 
         # Build general input and any additional input specific to models
         model_input = tf.keras.layers.Input(shape=tuple(state_size))
-        critic_input = tf.keras.layers.Input(shape=(1,))
+        critic_input = tf.keras.layers.Input(shape=(max_floor,))
 
          # Build the fully connected layers for shared convolutional layers
         conv_x = model_input
@@ -45,8 +45,8 @@ class ActorCriticModel(tf.keras.Model):
                                             strides=s,
                                             filters=f,
                                             name="conv_{}".format(i))(conv_x)
-            conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
-            conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+            #conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
+            #conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
         flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
 
          # Build the fully connected layers for the actor and critic models
@@ -54,16 +54,12 @@ class ActorCriticModel(tf.keras.Model):
         for i,(neurons) in enumerate(actor_fc):
             actor_x = tf.keras.layers.Dense(neurons,
                                             activation="relu",
-                                            name="actor_dense_{}".format(i))(actor_x)
-        critic_x = tf.keras.layers.concatenate([flatten, critic_input], name="conv_concat")
-        for i,(neurons) in enumerate(critic_fc):
-            critic_x = tf.keras.layers.Dense(neurons,
-                                             activation="relu",
-                                             name="critic_dense_{}".format(i))(critic_x)
+                                            name="dense_{}".format(i))(actor_x)
+        critic_x = tf.keras.layers.concatenate([actor_x, critic_input], name="conv_concat")
 
         # Build the output layers for the actor and critic models
         actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits', activation="softmax")(actor_x)
-        value = tf.keras.layers.Dense(1, name='value', activation='relu')(critic_x)
+        value = tf.keras.layers.Dense(1, name='value')(critic_x)
 
         # Build the final total model
         self.model = tf.keras.models.Model(inputs=[model_input, critic_input],
@@ -71,7 +67,7 @@ class ActorCriticModel(tf.keras.Model):
 
         # Take a step with random input to build the model
         self.step(np.stack([[np.random.random(tuple(state_size)).astype(np.float32),
-                    np.random.random((1)).astype(np.float32)]]))
+                    np.random.random((max_floor)).astype(np.float32)]]))
 
     def call(self, inputs):
         obs, floors = inputs
