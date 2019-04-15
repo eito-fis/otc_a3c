@@ -1,6 +1,8 @@
 
 import numpy as np
+import multiprocessing
 from multiprocessing import Process, Pipe
+import os
 
 def worker(remote, env_fn_wrapper, idx):
     '''
@@ -16,7 +18,7 @@ def worker(remote, env_fn_wrapper, idx):
         cmd, data = remote.recv()
         if cmd == 'step':
             state, reward, done, info = env.step(data)
-            total_info = info.copy()
+            total_info = info
             remote.send((state, reward, done, total_info))
         elif cmd == 'reset':
             state = env.reset()
@@ -53,9 +55,12 @@ class ParallelEnv():
     def __init__(self, env_fns):
         nenvs = len(env_fns)
         
+        multiprocessing.set_start_method("spawn")
+
         # Build pipes for communication to and from processed
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
 
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
         # Build processes
         self.ps = [Process(target=worker, args=(work_remote, CloudpickleWrapper(env_fn), idx))
                    for idx, (work_remote, env_fn) in enumerate(zip(self.work_remotes, env_fns))]
@@ -64,6 +69,7 @@ class ParallelEnv():
         for p in self.ps:
             p.daemon = True
             p.start()
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
         # Get env state size
         self.remotes[0].send(('get_size', None))
