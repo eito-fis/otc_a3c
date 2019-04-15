@@ -7,8 +7,7 @@ class Runner():
                  env=None,
                  model=None,
                  num_steps=None,
-                 gamma=0.99,
-                 lam=0.95):
+                 gamma=0.99):
         """
         A runner to learn the policy of an environment for a model
         env: The environment to learn from
@@ -20,7 +19,6 @@ class Runner():
         self.env = env
         self.model = model
         self.num_steps = num_steps
-        self.lam = lam
         self.gamma = gamma
         self.states  = self.env.reset()
         self.dones = np.zeros(self.env.num_envs)

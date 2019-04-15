@@ -28,7 +28,7 @@ class A2CAgent():
                  train_steps=None,
                  entropy_discount=0.01,
                  value_discount=0.5,
-                 learning_rate=0.00000042,
+                 learning_rate=0.00042,
                  num_steps=None,
                  env_func=None,
                  num_envs=None,
@@ -73,6 +73,7 @@ class A2CAgent():
         self.reward_queue = deque(maxlen=100)
         self.logging_period = logging_period
         self.checkpoint_period = checkpoint_period
+        self.episodes = 0
         
         # Build logging directories
         self.log_dir = os.path.join(output_dir, "logs/")
@@ -124,14 +125,16 @@ class A2CAgent():
         for info in ep_infos:
             self.floor_queue.append(info["floor"])
             self.reward_queue.append(info["total_reward"])
+            self.episodes += 1
         
         avg_floor = 0 if len(self.floor_queue) == 0 else sum(self.floor_queue) / len(self.floor_queue)
         avg_reward = 0 if len(self.reward_queue) == 0 else sum(self.reward_queue) / len(self.reward_queue)
         explained_variance = self.explained_variance(values, rewards)
-        
-        print("| Episode: {} | Average Floor: {} | Average Reward: {} |".format(i, avg_floor, avg_reward))
+
+        print("| Iteration: {} |".format(i)) 
+        print("| Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("| Entropy Loss: {} | Policy Loss: {} | Value Loss: {} |".format(entropy_loss, policy_loss, value_loss))
-        print("| Explained Variance: {} |".format(explained_variance))
+        print("| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, np.var(rewards)))
 
         # Periodically log
         if i % self.logging_period == 0:
@@ -159,7 +162,7 @@ class A2CAgent():
         """
         assert y_true.ndim == 1 and y_pred.ndim == 1
         var_y = np.var(y_true)
-        return 0 if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+        return np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
 
 
@@ -178,7 +181,7 @@ if __name__ == '__main__':
                      entropy_discount=0.01,
                      value_discount=0.5,
                      learning_rate=0.00000042,
-                     num_steps=650,
+                     num_steps=5,
                      env_func=env_func,
                      num_envs=4,
                      num_actions=4,

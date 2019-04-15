@@ -33,7 +33,7 @@ class WrappedObstacleTowerEnv():
         environment_filename=None,
         docker_training=False,
         worker_id=0,
-        retro=False,
+        retro=True,
         timeout_wait=30,
         realtime_mode=False,
         num_actions=3,
@@ -67,11 +67,14 @@ class WrappedObstacleTowerEnv():
 
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
+        self.retro = retro
         if mobilenet:
             self.mobilenet = WrappedKerasLayer(retro, self.mobilenet)
             self.state_size = [1280]
         elif gray_scale:
             self.state_size = [84, 84, 1]
+        elif retro:
+            self.state_size = [84, 84, 3]
         else:
             self.state_size = [168, 168, 3]
 
@@ -108,7 +111,10 @@ class WrappedObstacleTowerEnv():
         self.total_reward = 0
 
         # Preprocess current obs and add to stack
-        observation = state[0]
+        if self.retro is not True:
+            observation = state[0]
+        else:
+            observation = (state / 255).astype(np.float32)
         if self.mobilenet:
             observation = self.mobile_preprocess_observation(observation)
         elif self.gray_scale:
@@ -121,20 +127,25 @@ class WrappedObstacleTowerEnv():
 
     def step(self, action):
         # Convert int action to vector required by the env
-        if action == 0: # forward
-            action = [1, 0, 0, 0]
-        elif action == 1: # rotate camera left
-            action = [1, 1, 0, 0]
-        elif action == 2: # rotate camera right
-            action = [1, 2, 0, 0]
-        elif action == 3: # jump forward
-            action = [1, 0, 1, 0]
-        elif action == 5:
-            action = [2, 0, 0, 0]
-        elif action == 6:
-            action = [0, 0, 0, 1]
-        elif action == 7:
-            action = [0, 0, 0, 2]
+        if self.retro:
+            if action == 0: # forward
+                action = 18
+            elif action == 1: # rotate camera left
+                action = 24
+            elif action == 2: # rotate camera right
+                action = 30
+            elif action == 3: # jump forward
+                action = 21
+        else:
+            if action == 0: # forward
+                action = [1, 0, 0, 0]
+            elif action == 1: # rotate camera left
+                action = [1, 1, 0, 0]
+            elif action == 2: # rotate camera right
+                action = [1, 2, 0, 0]
+            elif action == 3: # jump forward
+                action = [1, 0, 1, 0]
+
 
         # Take the step and record data
         state, reward, done, info = self._obstacle_tower_env.step(action)
@@ -148,7 +159,10 @@ class WrappedObstacleTowerEnv():
             state = self.reset()
         else:
             # Preprocess current obs and add to stack
-            observation = state[0]
+            if self.retro is not True:
+                observation = state[0]
+            else:
+                observation = (state / 255).astype(np.float32)
             if self.mobilenet:
                 observation = self.mobile_preprocess_observation(observation)
             elif self.gray_scale:

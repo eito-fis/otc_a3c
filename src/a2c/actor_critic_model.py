@@ -55,7 +55,7 @@ class ActorCriticModel(tf.keras.Model):
             actor_x = tf.keras.layers.Dense(neurons,
                                             activation="relu",
                                             name="actor_dense_{}".format(i))(actor_x)
-        critic_x = tf.keras.layers.concatenate([tf.stop_gradient(flatten), critic_input], name="conv_concat")
+        critic_x = tf.keras.layers.concatenate([flatten, critic_input], name="conv_concat")
         for i,(neurons) in enumerate(critic_fc):
             critic_x = tf.keras.layers.Dense(neurons,
                                              activation="relu",
