@@ -117,7 +117,6 @@ class A2CAgent():
 
             # Log data
             self.logging(b_rewards, b_values, ep_infos, entropy_loss, policy_loss, value_loss, i)
-            print(b_values)
 
             print("\n")
 
@@ -131,11 +130,14 @@ class A2CAgent():
         avg_floor = 0 if len(self.floor_queue) == 0 else sum(self.floor_queue) / len(self.floor_queue)
         avg_reward = 0 if len(self.reward_queue) == 0 else sum(self.reward_queue) / len(self.reward_queue)
         explained_variance = self.explained_variance(values, rewards)
+        floor_weights = self.floor_weights()
 
         print("| Iteration: {} |".format(i)) 
         print("| Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("| Entropy Loss: {} | Policy Loss: {} | Value Loss: {} |".format(entropy_loss, policy_loss, value_loss))
         print("| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, np.var(rewards)))
+        print("| Floor Weights: {}".format(floor_weights))
+        self.floor_weights()
 
         # Periodically log
         if i % self.logging_period == 0:
@@ -164,6 +166,16 @@ class A2CAgent():
         assert y_true.ndim == 1 and y_pred.ndim == 1
         var_y = np.var(y_true)
         return np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+
+    def floor_weights(self):
+        '''
+        Get the weights for the one hot encoded floor input
+        Tells us what reward is tied to each floor
+        '''
+        value_layer = self.model.model.get_layer("value")
+        value_floors = value_layer.weights[0].numpy()
+        value_floors = np.squeeze(value_floors)[-25:]
+        return value_floors
 
 
 

@@ -81,7 +81,7 @@ class ActorCriticModel(tf.keras.Model):
         logits, values = self.predict(inputs)
 
         # Sample from probability distributions
-        actions = tf.squeeze(tf.random.categorical(tf.math.log(logits), 1), axis=-1).numpy()
+        actions = tf.squeeze(tf.random.categorical(logits, 1), axis=-1).numpy()
 
         # TODO Fix bug where this line breaks the program when there is only 1 env
         values = np.squeeze(values)

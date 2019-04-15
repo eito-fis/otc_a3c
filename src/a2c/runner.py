@@ -91,7 +91,10 @@ class Runner():
         discounted = []
         ret = 0
         for reward, done in zip(rewards[::-1], dones[::-1]):
-            ret = reward + gamma * ret * (1. - done)
+            if reward == 1:
+                ret = 1
+            else:
+                ret = reward + gamma * ret * (1. - done)
             discounted.append(ret)
         return discounted[::-1]
 
