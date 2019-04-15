@@ -17,7 +17,7 @@ import gin
 import logging
 import argparse
 
-from src.agents.eval import MasterAgent, Memory
+from src.agents.eval import MasterAgent
 from src.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
 
 import gym
@@ -25,10 +25,6 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow import keras
-
-# import time
-# import matplotlib
-# matplotlib.use('PS')
 
 def main(args,
          train_steps=500,
