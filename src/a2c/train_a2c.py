@@ -13,8 +13,8 @@ import tensorflow as tf
 def main(args,
          train_steps=2500,
          entropy_discount=0.01,
-         value_discount=0.1,
-         learning_rate=0.0000042,
+         value_discount=0.01,
+         learning_rate=0.000042,
          num_steps=650,
          num_envs=4,
          num_actions=4,
@@ -23,7 +23,7 @@ def main(args,
          critic_fc=[1024,512],
          conv_size=((8,4,32), (4,2,64), (3,1,64)),
          logging_period=1,
-         checkpoint_period=10):
+         checkpoint_period=100):
 
     '''
     Train an A2C agent
