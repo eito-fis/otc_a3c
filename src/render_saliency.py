@@ -22,12 +22,13 @@ STRIDE = 8
 OFFSET = 10
 
 def superimpose(source_image, noise_image):
-  new_image = np.copy(source_image)
-  for y in range(IMAGE_SIZE):
-    for x in range(IMAGE_SIZE):
-#       if noise_image[x,y] > THRESHOLD:
-      new_image[x,y] = np.multiply(NOISE_WEIGHT,noise_image[x,y]) + np.multiply((1-NOISE_WEIGHT),new_image[x,y])
-  return new_image
+    new_image = np.copy(source_image)
+    for y in range(IMAGE_SIZE):
+        for x in range(IMAGE_SIZE):
+            new_image[x,y] = np.multiply(NOISE_WEIGHT,noise_image[x,y]) + np.multiply((1-NOISE_WEIGHT),new_image[x,y])
+    new_image = cv2.normalize(new_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    new_image = cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB)
+    return new_image
 
 def blur_images(images, radius):
   return np.array([cv2.blur(image, (radius,radius)) for image in images])
@@ -99,9 +100,9 @@ def draw_observation(frame, observation):
     if observation.ndim < 3: # IF RETRO
         image = cv2.cvtColor(observation, cv2.COLOR_GRAY2RGB)
     else:
-        image = cv2.cvtColor(observation, cv2.COLOR_BGR2RGB)
+        image = observation
     image = cv2.resize(image, dsize=(height,width), interpolation=cv2.INTER_NEAREST)
-    image = cv2.normalize(image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    # image = cv2.normalize(image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     frame[y:y+height,x:x+width,:] = image
 
 def draw_distributions(frame, distribution, max_dist):
@@ -133,7 +134,7 @@ if __name__ == '__main__':
     #COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser(description='Render one memory.')
     parser.add_argument('--memory-path', required=True, help='path to saved memory object file')
-    parser.add_argument('--output', default='saliency_output/saliency_render.mp4', help='name of the video file')
+    parser.add_argument('--output', default='saliency/rgb/saliency_output/saliency_render.mp4', help='name of the video file')
     parser.add_argument('--restore', type=str, default=None, help='path to saved model')
     args = parser.parse_args()
 
@@ -151,6 +152,7 @@ if __name__ == '__main__':
     # distributions = memory.probs
     # frame_data = zip(observations, distributions, saliency_maps)
     # dist_max = max(map(max, distributions))
+    print("Memory length: {}".format(len(observations)))
 
     #VIDEO PARAMETERS#
     fps    = 10.
@@ -179,14 +181,11 @@ if __name__ == '__main__':
     print("Rendering...")
     for i, (obs, state, floor) in enumerate(frame_data):
         state = states[i]
-        prev_states = prev_states[1:] + [state]
+        # prev_states = prev_states[1:] + [state]
         frame = np.zeros((height,width,3),dtype=np.uint8)
-        print("Generating saliency...")
         saliency_map = generate_saliency(model, image_module, obs, prev_states[:-1], floor, masks, BLUR_COEFF, STRIDE)
-        normed_map = cv2.normalize(saliency_map, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        cv2.imwrite('saliency_output/saliency_map_{}.png'.format(i), cv2.cvtColor(normed_map, cv2.COLOR_BGR2RGB))
-        print("Done.")
         image = superimpose(obs.astype(np.float32), saliency_map.astype(np.float32))
+        cv2.imwrite('saliency/rgb/saliency_output/saliency_map_{}.png'.format(i), image)
         draw_observation(frame,image)
         cv2.putText(frame,'Step: {}'.format(i),(750,100),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
         # draw_distributions(frame, dist, dist_max)
