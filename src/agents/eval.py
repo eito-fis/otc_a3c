@@ -111,8 +111,8 @@ class MasterAgent():
                    curiosity=self.curiosity,
                    max_episodes=self.train_steps,
                    memory_path=self.memory_path,
-                   save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
-                #    save_path=self.save_path) for i in range(1)]
+                #    save_path=self.save_path) for i in range(multiprocessing.cpu_count())]
+                   save_path=self.save_path) for i in range(1)]
 
         for i, worker in enumerate(workers):
             print("Starting worker {}".format(i))
@@ -209,7 +209,8 @@ class Worker(threading.Thread):
         mem = Memory()
 
         while Worker.global_episode < self.max_episodes:
-            floor = np.random.randint(0, self.max_floor)
+            # floor = np.random.randint(0, self.max_floor)
+            floor = 0
             self.env.floor(floor)
             state, obs = self.env.reset()
             rolling_average_state = state
@@ -229,9 +230,10 @@ class Worker(threading.Thread):
                     action = np.random.choice(possible_actions)
                 else:
                     stacked_state = np.concatenate(prev_states, axis=-1).astype(np.float32)
-                    action = self.local_model.actor_model(stacked_state[None, :])
-                    action = np.squeeze(tf.nn.softmax(action).numpy())
-                    action = np.argmax(action)
+                    logits = self.local_model.actor_model(stacked_state[None, :])
+                    action = np.squeeze(tf.random.categorical(logits, 1).numpy())
+                    # action = np.squeeze(tf.nn.softmax(logits).numpy())
+                    # action = np.argmax(action)
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
 
@@ -246,6 +248,12 @@ class Worker(threading.Thread):
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
             print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
+            if self.memory_path:
+                output_filepath = os.path.join(self.memory_path, "_worker{}_episode{}".format(self.worker_idx, current_episode))
+                os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+                print("Saving memory to output file path {}".format(output_filepath))
+                output_file = open(output_filepath, 'wb+')
+                pickle.dump(mem, output_file)
             if passed:
                 self.result_queue.put((floor,0))
             else:
