@@ -36,7 +36,7 @@ class Runner():
         # Init lists
         b_states, b_rewards, b_actions, b_values, b_dones, b_probs = [], [], [], [], [], []
         ep_infos = []
-        
+
         # Rollout on each env for num_steps
         for _ in tqdm(range(self.num_steps), "Rollout"):
             # Generate actions, values, and probabilities of the actions sampled
