@@ -39,11 +39,12 @@ class Runner():
         # Rollout on each env for num_steps
         for _ in tqdm(range(self.num_steps), "Rollout"):
             # Generate actions, values, and probabilities of the actions sampled
-            actions, values, _ = self.model.step(self.states)
+            actions, values, probs = self.model.step(self.states)
 
             b_states.append(self.states)
             b_actions.append(actions)
             b_values.append(values)
+            b_probs.append(probs)
             b_dones.append(self.dones)
 
             # Take actions
@@ -63,6 +64,7 @@ class Runner():
         b_rewards = np.asarray(b_rewards, dtype=np.float32).swapaxes(0, 1)
         b_actions = np.asarray(b_actions).swapaxes(0, 1)
         b_values = np.asarray(b_values, dtype=np.float32).swapaxes(0, 1)
+        b_probs = np.asarray(b_probs, dtype=np.float32).swapaxes(0, 1)
         b_dones = np.asarray(b_dones, dtype=np.bool).swapaxes(0, 1)
         b_dones = b_dones[:, 1:]
         true_rewards = np.copy(b_rewards)
@@ -79,9 +81,10 @@ class Runner():
             b_rewards[n] = rewards
 
         # Flatten (num_env, num_steps) to (num_envs * num_steps) so we have one big batch
-        b_states, b_rewards, b_dones, b_actions, b_values, true_rewards = \
-            map(self.flatten, (b_states, b_rewards, b_dones, b_actions, b_values, true_rewards))
-        return b_states, b_rewards, b_dones, b_actions, b_values, true_rewards, ep_infos
+        b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_rewards = \
+            map(self.flatten, (b_states, b_rewards, b_dones, b_actions,
+                               b_values, b_probs, true_rewards))
+        return b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_rewards, ep_infos
 
     def discount(self, rewards, dones, gamma):
         """
