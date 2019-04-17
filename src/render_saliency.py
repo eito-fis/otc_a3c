@@ -67,11 +67,12 @@ def generate_perturbations(source_image, masks, blur_coeff, stride):
 
 def generate_saliency(model, image_module, source_image, prev_states, floor, masks, blur_coeff, stride):
     floor = np.array([floor]).astype(np.float32)
-    saliency_map = np.zeros((168,168))
+    actor_saliency_map = np.zeros((168,168))
+    critic_saliency_map = np.zeros((168,168))
     source_input = np.array([cv2.resize(source_image, (224,224))])
     source_embedding = image_module(source_input)
     stacked_state = np.concatenate(prev_states + [source_embedding])
-    logits = np.squeeze(model.predict([stacked_state[None,:], floor])[0])
+    actor_logits, critic_logits = map(np.squeeze, model.predict([stacked_state[None,:], floor]))
     blurred_image = cv2.blur(source_image, (blur_coeff,blur_coeff))
     for y in range(IMAGE_SHAPE[0])[::stride]:
         for x in range(IMAGE_SHAPE[1])[::stride]:
@@ -80,12 +81,15 @@ def generate_saliency(model, image_module, source_image, prev_states, floor, mas
             perturbed_input = np.array([cv2.resize(perturbed_image, (224,224))]).astype(np.float32)
             perturbed_embedding = image_module(perturbed_input)
             stacked_state = np.concatenate(prev_states + [perturbed_embedding])
-            perturbed_logits = np.squeeze(model.predict([stacked_state[None,:], floor])[0])
-            saliency = np.square(sum(logits - perturbed_logits)) / 2
-            saliency_map = saliency_map + np.multiply(saliency, mask)
+            perturbed_actor_logits, perturbed_critic_logits = map(np.squeeze, model.predict([stacked_state[None,:], floor]))
+            actor_saliency = np.square(sum(actor_logits - perturbed_actor_logits)) / 2
+            critic_saliency = np.square(critic_logits - perturbed_critic_logits) / 2
+            actor_saliency_map = actor_saliency_map + np.multiply(actor_saliency, mask)
+            critic_saliency_map = critic_saliency_map + np.multiply(critic_saliency, mask)
             # saliency_map[y,x] = saliency
-    saliency_map = cv2.normalize(saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-    rgb_saliency_map = (np.zeros(IMAGE_SHAPE) + saliency_map[:,:,None]) * [1,0,0]
+    actor_saliency_map = cv2.normalize(actor_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    critic_saliency_map = cv2.normalize(critic_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    rgb_saliency_map = np.zeros(IMAGE_SHAPE) + (actor_saliency_map[:,:,None] * [1,0,0]) + (critic_saliency_map[:,:,None] * [0,0,1])
     return rgb_saliency_map
 
 masks = generate_masks((168,168), MASK_RADIUS, STRIDE)
