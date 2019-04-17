@@ -21,7 +21,7 @@ def main(args,
          stack_size=4,
          actor_fc=[1024,512],
          critic_fc=[1024,512],
-         conv_size=None,
+         conv_size=((8,4,16),(4,2,32),(3,1,64)),
          logging_period=1,
          checkpoint_period=100):
 

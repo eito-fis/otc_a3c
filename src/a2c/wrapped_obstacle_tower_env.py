@@ -122,8 +122,8 @@ class WrappedObstacleTowerEnv():
             observation = self.gray_preprocess_observation(observation)
         self.stack = self.stack[1:] + [observation]
 
-        # Build our state
-        ret_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
+        # Build our state (MUST BE A TUPLE)
+        ret_state = (np.concatenate(self.stack, axis=-1).astype(np.float32),)
         return ret_state
 
     def step(self, action):
@@ -170,8 +170,8 @@ class WrappedObstacleTowerEnv():
                 observation = self.gray_preprocess_observation(observation)
             self.stack = self.stack[1:] + [observation]
 
-            # Build our state
-            ret_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
+            # Build our state (MUST BE A TUPLE)
+            ret_state = (np.concatenate(self.stack, axis=-1).astype(np.float32),)
 
         return ret_state, reward, done, info
 

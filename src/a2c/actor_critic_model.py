@@ -35,10 +35,10 @@ class ActorCriticModel(tf.keras.models.Model):
         super().__init__()
 
         # Multiply the final dimension of the state by stack_size to get correct input_size
-        state_size = state_size[:-1] + [state_size[-1] * stack_size]
+        self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
 
         # Build general input and any additional input specific to models
-        model_input = tf.keras.layers.Input(shape=tuple(state_size))
+        model_input = tf.keras.layers.Input(shape=tuple(self.state_size))
 
         # Build the fully connected layers for shared convolutional layers
         if conv_size is not None:
@@ -70,16 +70,14 @@ class ActorCriticModel(tf.keras.models.Model):
         value = tf.keras.layers.Dense(1, name='value')(actor_x)
 
         # Build the final total model
-        self.model = tf.keras.models.Model(inputs=[model_input, critic_input],
+        self.model = tf.keras.models.Model(inputs=[model_input],
                                            outputs=[actor_logits, value])
 
         # Take a step with random input to build the model
-        self.step(np.stack([[np.random.random(tuple(state_size)).astype(np.float32),
-                    np.random.random((max_floor)).astype(np.float32)]]))
+        self.step([[np.random.random((tuple(self.state_size))).astype(np.float32)]])
 
     def call(self, inputs):
-        obs, floors = inputs
-        actor_logits, value = self.model([obs, floors])
+        actor_logits, value = self.model(inputs)
         return actor_logits, value
 
     def step(self, inputs):
@@ -105,7 +103,8 @@ class ActorCriticModel(tf.keras.models.Model):
         return values
 
     def process_inputs(self, inputs):
-        # Convert n_envs x n_inputs list to n_inputs x n_envs list
+        # Convert n_envs x n_inputs list to n_inputs x n_envs list if we have
+        # multiple inputs
         inputs = [np.asarray(l) for l in zip(*inputs)]
         return inputs
 
