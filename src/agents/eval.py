@@ -248,7 +248,10 @@ class Worker(threading.Thread):
                 obs = new_obs
             print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
             if self.memory_path:
-                output_filepath = os.path.join(self.memory_path, "floor{}_episode{}".format(floor, current_episode))
+                if passed: 
+                    output_filepath = os.path.join(self.memory_path, "pass_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
+                else:
+                    output_filepath = os.path.join(self.memory_path, "fail_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
                 os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
                 print("Saving memory to output file path {}".format(output_filepath))
                 output_file = open(output_filepath, 'wb+')
