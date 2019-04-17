@@ -122,9 +122,9 @@ class WrappedObstacleTowerEnv():
             observation = self.gray_preprocess_observation(observation)
         self.stack = self.stack[1:] + [observation]
 
-        # One hot encode floor
-        _floor_arry = tf.one_hot(self.current_floor, self.max_floor).numpy()
-        return (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
+        # Build our state
+        ret_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
+        return ret_state
 
     def step(self, action):
         # Convert int action to vector required by the env
@@ -157,7 +157,7 @@ class WrappedObstacleTowerEnv():
         if done:
             # Save info and reset when an episode ends
             info["episode_info"] = {"floor": self.current_floor, "total_reward": self.total_reward}
-            state = self.reset()
+            ret_state = self.reset()
         else:
             # Preprocess current obs and add to stack
             if self.retro is not True:
@@ -170,12 +170,10 @@ class WrappedObstacleTowerEnv():
                 observation = self.gray_preprocess_observation(observation)
             self.stack = self.stack[1:] + [observation]
 
-            # One hot encode floor
-            _floor_arry = tf.one_hot(self.current_floor, self.max_floor).numpy()
             # Build our state
-            state = (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
+            ret_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
 
-        return state, reward, done, info
+        return ret_state, reward, done, info
 
     def close(self):
         self._obstacle_tower_env.close()

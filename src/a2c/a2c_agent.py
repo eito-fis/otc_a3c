@@ -139,8 +139,6 @@ class A2CAgent():
         print("| Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("| Entropy Loss: {} | Policy Loss: {} | Value Loss: {} |".format(entropy_loss, policy_loss, value_loss))
         print("| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, np.var(rewards)))
-        print("| Floor Weights: {}".format(floor_weights))
-        self.floor_weights()
 
         # Periodically log
         if i % self.logging_period == 0:

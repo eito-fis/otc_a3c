@@ -39,7 +39,6 @@ class ActorCriticModel(tf.keras.models.Model):
 
         # Build general input and any additional input specific to models
         model_input = tf.keras.layers.Input(shape=tuple(state_size))
-        critic_input = tf.keras.layers.Input(shape=(max_floor,))
 
         # Build the fully connected layers for shared convolutional layers
         if conv_size is not None:
@@ -65,11 +64,10 @@ class ActorCriticModel(tf.keras.models.Model):
             actor_x = tf.keras.layers.Dense(neurons,
                                             activation="relu",
                                             name="dense_{}".format(i))(actor_x)
-        critic_x = tf.keras.layers.concatenate([actor_x, critic_input], name="conv_concat")
 
         # Build the output layers for the actor and critic models
         actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits')(actor_x)
-        value = tf.keras.layers.Dense(1, name='value')(critic_x)
+        value = tf.keras.layers.Dense(1, name='value')(actor_x)
 
         # Build the final total model
         self.model = tf.keras.models.Model(inputs=[model_input, critic_input],
