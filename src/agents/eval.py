@@ -223,7 +223,7 @@ class Worker(threading.Thread):
                 mem.store(state, action, reward, floor)
                 if self.memory_path:
                     mem.obs.append(obs)
-                if reward == 1:
+                if reward > .95:
                     passed = True
                     break
 

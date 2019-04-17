@@ -1,4 +1,3 @@
-
 import os
 import pickle
 import argparse
@@ -269,7 +268,10 @@ class Worker(threading.Thread):
         # Calculate discounted rewards
         discounted_rewards = []
         for reward in memory.rewards[::-1]:
-            reward_sum = reward + gamma * reward_sum
+            if reward == 0:
+                reward_sum = reward + gamma * reward_sum
+            else:
+                reward_sum = reward
             discounted_rewards.append(reward_sum)
         discounted_rewards.reverse()
 
