@@ -39,7 +39,7 @@ class Runner():
         # Rollout on each env for num_steps
         for _ in tqdm(range(self.num_steps), "Rollout"):
             # Generate actions, values, and probabilities of the actions sampled
-            actions, values = self.model.step(self.states)
+            actions, values, _ = self.model.step(self.states)
 
             b_states.append(self.states)
             b_actions.append(actions)

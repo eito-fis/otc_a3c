@@ -88,11 +88,13 @@ class ActorCriticModel(tf.keras.models.Model):
 
         # Sample from probability distributions
         actions = tf.squeeze(tf.random.categorical(logits, 1), axis=-1).numpy()
+        probs = tf.nn.softmax(logits)
+        action_probs = np.array([p[a] for p,a in zip(probs, actions)])
 
         # TODO Fix bug where this line breaks the program when there is only 1 env
         values = np.squeeze(values)
 
-        return actions, values
+        return actions, values, action_probs
 
     def get_values(self, inputs):
         inputs = self.process_inputs(inputs)
