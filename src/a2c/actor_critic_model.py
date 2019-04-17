@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-class ActorCriticModel(tf.keras.Model):
+class ActorCriticModel(tf.keras.models.Model):
     '''
     Actor Critic Model
     - Contains both our actor and critic model seperately
@@ -34,30 +34,33 @@ class ActorCriticModel(tf.keras.Model):
                  max_pooling=False):
         super().__init__()
 
-         # Multiply the final dimension of the state by stack_size to get correct input_size
+        # Multiply the final dimension of the state by stack_size to get correct input_size
         state_size = state_size[:-1] + [state_size[-1] * stack_size]
 
         # Build general input and any additional input specific to models
         model_input = tf.keras.layers.Input(shape=tuple(state_size))
         critic_input = tf.keras.layers.Input(shape=(max_floor,))
 
-         # Build the fully connected layers for shared convolutional layers
-        conv_x = model_input
-        for i,(k,s,f) in enumerate(conv_size):
-            conv_x = tf.keras.layers.Conv2D(padding="same",
-                                            kernel_size=k,
-                                            strides=s,
-                                            filters=f,
-                                            use_bias=False,
-                                            name="conv_{}".format(i))(conv_x)
-            conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
-            conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
-            if max_pooling:
-                conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
-        flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
+        # Build the fully connected layers for shared convolutional layers
+        if conv_size is not None:
+            conv_x = model_input
+            for i,(k,s,f) in enumerate(conv_size):
+                conv_x = tf.keras.layers.Conv2D(padding="same",
+                                                kernel_size=k,
+                                                strides=s,
+                                                filters=f,
+                                                use_bias=False,
+                                                name="conv_{}".format(i))(conv_x)
+                conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
+                conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+                if max_pooling:
+                    conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
+            flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
+            actor_x = flatten
+        else:
+            actor_x = model_input
 
-         # Build the fully connected layers for the actor and critic models
-        actor_x = flatten
+        # Build the fully connected layers for the actor and critic models
         for i,(neurons) in enumerate(actor_fc):
             actor_x = tf.keras.layers.Dense(neurons,
                                             activation="relu",

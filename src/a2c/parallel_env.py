@@ -18,7 +18,7 @@ def worker(remote, env_fn_wrapper, idx):
         cmd, data = remote.recv()
         if cmd == 'step':
             state, reward, done, info = env.step(data)
-            total_info = info
+            total_info = info.copy()
             remote.send((state, reward, done, total_info))
         elif cmd == 'reset':
             state = env.reset()

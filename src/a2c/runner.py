@@ -14,7 +14,6 @@ class Runner():
         model: The model to learn
         num_steps: The number of steps to run for each environment
         gamma: Discount factor
-        lam: Factor for trade-off of bias vs variance for Generalized Advantage Estimator
         """
         self.env = env
         self.model = model
@@ -91,10 +90,7 @@ class Runner():
         discounted = []
         ret = 0
         for reward, done in zip(rewards[::-1], dones[::-1]):
-            if reward > 0.95:
-                ret = 1.
-            else:
-                ret = reward + gamma * ret * (1. - done)
+            ret = reward + gamma * ret * (1. - done)
             discounted.append(ret)
         return discounted[::-1]
 

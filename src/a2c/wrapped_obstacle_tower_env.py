@@ -63,7 +63,7 @@ class WrappedObstacleTowerEnv():
         if floor is not 0:
             self._obstacle_tower_env.floor(floor)
         self.start_floor = floor
-        self.floor = floor
+        self.current_floor = floor
 
         self.mobilenet = mobilenet
         self.gray_scale = gray_scale
@@ -102,12 +102,12 @@ class WrappedObstacleTowerEnv():
         observation = (observation * 255).astype(np.uint8)
         obs_image = Image.fromarray(observation)
         obs_image = obs_image.resize((224, 224), Image.NEAREST)
-        return np.array(obs_image)
+        return self.mobilenet(np.array(obs_image))
 
     def reset(self):
         # Reset env, stack and floor
         state = self._obstacle_tower_env.reset()
-        self.floor = self.start_floor
+        self.current_floor = self.start_floor
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
 
@@ -123,7 +123,7 @@ class WrappedObstacleTowerEnv():
         self.stack = self.stack[1:] + [observation]
 
         # One hot encode floor
-        _floor_arry = tf.one_hot(self.floor, self.max_floor).numpy()
+        _floor_arry = tf.one_hot(self.current_floor, self.max_floor).numpy()
         return (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
 
     def step(self, action):
@@ -151,12 +151,12 @@ class WrappedObstacleTowerEnv():
         # Take the step and record data
         state, reward, done, info = self._obstacle_tower_env.step(action)
 
-        if reward >= 1: self.floor += 1
+        if reward >= 0.95: self.current_floor += 1
         self.total_reward += reward
         
         if done:
             # Save info and reset when an episode ends
-            info["episode_info"] = {"floor": self.floor, "total_reward": self.total_reward}
+            info["episode_info"] = {"floor": self.current_floor, "total_reward": self.total_reward}
             state = self.reset()
         else:
             # Preprocess current obs and add to stack
@@ -171,7 +171,7 @@ class WrappedObstacleTowerEnv():
             self.stack = self.stack[1:] + [observation]
 
             # One hot encode floor
-            _floor_arry = tf.one_hot(self.floor, self.max_floor).numpy()
+            _floor_arry = tf.one_hot(self.current_floor, self.max_floor).numpy()
             # Build our state
             state = (np.concatenate(self.stack, axis=-1).astype(np.float32), _floor_arry)
 
