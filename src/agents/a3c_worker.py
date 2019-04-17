@@ -22,7 +22,8 @@ def record(episode,
            result_queue,
            total_loss,
            num_steps,
-           explained_variance):
+           explained_variance,
+           entropy_loss):
     """
     Stores score and print statistics.
     Arguments:
@@ -45,7 +46,7 @@ def record(episode,
         global_ep_floor = global_ep_floor * 0.8 + episode_floor * 0.2
 
     # Print metrics
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Moving Average Floor: {} | Episode Floor: {} | Loss: {} | Explained Variance: {} | Steps: {} | Worker: {}".format(episode, global_ep_reward, episode_reward, global_ep_floor, episode_floor, int(total_loss * 1000) / 1000, explained_variance, num_steps, worker_idx))
+    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Moving Average Floor: {} | Episode Floor: {} | Loss: {} | Explained Variance: {} | Steps: {} | Worker: {} | Entropy Loss: {}".format(episode, global_ep_reward, episode_reward, global_ep_floor, episode_floor, int(total_loss * 1000) / 1000, explained_variance, num_steps, worker_idx, entropy_loss))
 
     # Add metrics to queue
     result_queue.put(global_ep_reward)
@@ -211,7 +212,7 @@ class Worker(threading.Thread):
                 if time_count == self.update_freq or done:
                     # Calculate loss based on trajectory
                     with tf.GradientTape() as tape:
-                        total_loss, values, rewards  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor)
+                        total_loss, values, rewards, entropy_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor)
                     ep_values.extend(values.tolist())
                     ep_rewards.extend(rewards)
                     self.ep_loss += total_loss
@@ -224,7 +225,7 @@ class Worker(threading.Thread):
                     self.local_model.set_weights(self.global_model.get_weights())
                     
                     if done:
-                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss, ep_values, ep_rewards)
+                        self.log_episode(save_visual, current_episode, ep_steps, ep_reward, mem, total_loss, ep_values, ep_rewards, entropy_loss)
                         Worker.global_episode += 1
                     time_count = 0
 
@@ -310,9 +311,9 @@ class Worker(threading.Thread):
         # Discount losses, add together and return
         return policy_loss + \
                (value_loss * self.value_discount) + \
-               (entropy_loss * self.entropy_discount), np.squeeze(values.numpy()), discounted_rewards
+               (entropy_loss * self.entropy_discount), np.squeeze(values.numpy()), discounted_rewards, entropy_loss
 
-    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss, ep_values, ep_rewards):
+    def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss, ep_values, ep_rewards, entropy_loss):
         '''
         Helper function that logs and saves info
         '''
@@ -337,7 +338,8 @@ class Worker(threading.Thread):
                                                                                          self.result_queue,
                                                                                          self.ep_loss,
                                                                                          ep_steps,
-                                                                                         explained_variance)
+                                                                                         explained_variance,
+                                                                                         entropy_loss)
         print(ep_values)
 
         # We must use a lock to save our model and to print to prevent data races.
