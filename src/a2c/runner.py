@@ -48,7 +48,7 @@ class Runner():
             b_dones.append(self.dones)
 
             # Take actions
-            self.states[:], rewards, self.dones[:], infos = self.env.step(actions)
+            self.states, rewards, self.dones, infos = self.env.step(actions)
 
             b_rewards.append(rewards)
 

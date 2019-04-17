@@ -33,6 +33,7 @@ class ActorCriticModel(tf.keras.models.Model):
                  conv_size=None,
                  max_pooling=False):
         super().__init__()
+        self.num_actions = num_actions
 
         # Multiply the final dimension of the state by stack_size to get correct input_size
         self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
@@ -85,11 +86,14 @@ class ActorCriticModel(tf.keras.models.Model):
 
         # Make predictions on input
         logits, values = self.predict(inputs)
+        probs = tf.nn.softmax(logits)
 
         # Sample from probability distributions
         actions = tf.squeeze(tf.random.categorical(logits, 1), axis=-1).numpy()
-        probs = tf.nn.softmax(logits)
-        action_probs = np.array([p[a] for p,a in zip(probs, actions)])
+
+        # Get action probabilities
+        one_hot_actions = tf.one_hot(actions, self.num_actions)
+        action_probs = tf.reduce_sum(probs * one_hot_actions, axis=-1).numpy()
 
         # TODO Fix bug where this line breaks the program when there is only 1 env
         values = np.squeeze(values)
