@@ -39,7 +39,8 @@ class ActorCriticModel(tf.keras.models.Model):
         self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
 
         # Build general input and any additional input specific to models
-        model_input = tf.keras.layers.Input(shape=tuple(self.state_size))
+        model_input = tf.keras.layers.Input(shape=tuple(self.state_size), name="model_input")
+        critic_input = tf.keras.layers.Input(shape=(max_floor + 1,), name="critic_input")
 
         # Build the fully connected layers for shared convolutional layers
         if conv_size is not None:
@@ -51,8 +52,8 @@ class ActorCriticModel(tf.keras.models.Model):
                                                 filters=f,
                                                 use_bias=False,
                                                 name="conv_{}".format(i))(conv_x)
-                conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
-                conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+                #conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
+                #conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
                 if max_pooling:
                     conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
             flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
@@ -68,14 +69,16 @@ class ActorCriticModel(tf.keras.models.Model):
 
         # Build the output layers for the actor and critic models
         actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits')(actor_x)
-        value = tf.keras.layers.Dense(1, name='value')(actor_x)
+        critic_x = tf.keras.layers.concatenate([actor_x, critic_input])
+        value = tf.keras.layers.Dense(1, name='value')(critic_x)
 
         # Build the final total model
-        self.model = tf.keras.models.Model(inputs=[model_input],
+        self.model = tf.keras.models.Model(inputs=[model_input, critic_input],
                                            outputs=[actor_logits, value])
 
         # Take a step with random input to build the model
-        self.step([[np.random.random((tuple(self.state_size))).astype(np.float32)]])
+        self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
+                    np.random.random((max_floor + 1,)).astype(np.float32)]])
 
     def call(self, inputs):
         actor_logits, value = self.model(inputs)
@@ -113,6 +116,9 @@ class ActorCriticModel(tf.keras.models.Model):
         # multiple inputs
         inputs = [np.asarray(l) for l in zip(*inputs)]
         return inputs
+
+
+
 
 if __name__ == '__main__':
     model = ActorCriticModel(num_actions=4,

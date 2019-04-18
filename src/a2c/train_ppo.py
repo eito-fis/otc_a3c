@@ -13,20 +13,20 @@ import tensorflow as tf
 def main(args,
          train_steps=2500,
          update_epochs=10,
-         num_minibatches=8,
-         learning_rate=0.0000042,
-         entropy_discount=0.,
+         num_minibatches=4,
+         learning_rate=0.000042,
+         entropy_discount=0.001,
          value_discount=0.5,
          epsilon=0.2,
          num_steps=650,
          num_envs=16,
          num_actions=4,
-         stack_size=2,
+         stack_size=4,
          actor_fc=[1024,512],
          critic_fc=[1024,512],
          conv_size=((8,4,16),(4,2,32),(3,1,64)),
          logging_period=1,
-         checkpoint_period=100):
+         checkpoint_period=10):
 
     '''
     Train a PPO agent

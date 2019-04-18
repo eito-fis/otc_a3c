@@ -81,6 +81,7 @@ class WrappedObstacleTowerEnv():
         self.stack_size = stack_size
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
+        self.current_reward = 0
         self.max_floor = 25
 
         self.id = worker_id
@@ -110,6 +111,7 @@ class WrappedObstacleTowerEnv():
         self.current_floor = self.start_floor
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
+        self.current_reward = 0
 
         # Preprocess current obs and add to stack
         if self.retro:
@@ -123,7 +125,11 @@ class WrappedObstacleTowerEnv():
         self.stack = self.stack[1:] + [observation]
 
         # Build our state (MUST BE A TUPLE)
-        ret_state = (np.concatenate(self.stack, axis=-1).astype(np.float32),)
+        one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
+        floor_data = np.append(one_hot_floor, self.current_reward).astype(np.float32)
+        stacked_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
+        ret_state = (stacked_state, floor_data)
+
         return ret_state
 
     def step(self, action):
@@ -151,7 +157,12 @@ class WrappedObstacleTowerEnv():
         # Take the step and record data
         state, reward, done, info = self._obstacle_tower_env.step(action)
 
-        if reward >= 0.95: self.current_floor += 1
+        # Keep track of current floor reward and total reward
+        if reward >= 0.95:
+            self.current_floor += 1
+            self.current_reward = 0
+        else:
+            self.current_reward += reward
         self.total_reward += reward
         
         if done:
@@ -171,7 +182,10 @@ class WrappedObstacleTowerEnv():
             self.stack = self.stack[1:] + [observation]
 
             # Build our state (MUST BE A TUPLE)
-            ret_state = (np.concatenate(self.stack, axis=-1).astype(np.float32),)
+            one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
+            floor_data = np.append(one_hot_floor, self.current_reward).astype(np.float32)
+            stacked_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
+            ret_state = (stacked_state, floor_data)
 
         return ret_state, reward, done, info
 

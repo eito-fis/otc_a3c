@@ -68,7 +68,7 @@ class PPOAgent():
                              num_steps=num_steps)
 
         # Build optimizer
-        self.opt = tf.keras.optimizers.Adam(learning_rate)
+        self.opt = tf.optimizers.Adam(learning_rate)
 
         # Setup training parameters
         self.train_steps = train_steps
@@ -101,7 +101,7 @@ class PPOAgent():
 
     def train(self):
         for i in range(self.train_steps):
-            print("Starting training step {}...".format(i))
+            print("Starting training step {}...\n".format(i))
 
             # Reset step logging
             step_policy_loss, step_entropy_loss, step_value_loss, step_ratio = [], [], [], []
@@ -111,13 +111,14 @@ class PPOAgent():
             b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.run()
             
             # PPO Updates!
+            print("\nStarting PPO updates...")
             for e in range(self.update_epochs):
                 # Reset epoch logging
                 epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_ratio = [], [], [], []
                 # Shuffle indicies
                 np.random.shuffle(indicies)
 
-                for start in tqdm(range(0, self.b_size, self.mb_size), "\tEpoch {}".format(e)):
+                for start in tqdm(range(0, self.b_size, self.mb_size), "   Epoch {}".format(e)):
                     # Generate minibatch
                     end = start + self.mb_size
                     mb_indicies = indicies[start:end]
@@ -185,8 +186,6 @@ class PPOAgent():
             self.log_step(b_rewards, b_values, step_policy_loss, step_entropy_loss,
                           step_value_loss, step_ratio, ep_infos, i)
 
-            print("\n")
-
     def log_epoch(self, e, policy_loss, entropy_loss, value_loss, ratio):
         avg_policy_loss = np.mean(policy_loss)
         avg_entropy_loss = np.mean(entropy_loss)
@@ -211,11 +210,12 @@ class PPOAgent():
         avg_ratio = np.mean(ratio)
         explained_variance, env_variance = self.explained_variance(values, rewards)
 
-        print("Train Step Metrics:")
+        print("\nTrain Step Metrics:")
         print("\t| Total Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
         print("\t| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, env_variance))
         print("\t| Average Action Ratio: {} |".format(avg_ratio))
+        print()
 
         # Periodically log
         if i % self.logging_period == 0:

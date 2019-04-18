@@ -4,12 +4,13 @@ import multiprocessing
 from multiprocessing import Process, Pipe
 import os
 
-def worker(remote, env_fn_wrapper, idx):
+def worker(parent_remote, remote, env_fn_wrapper, idx):
     '''
     The function that each of our processes runs. Takes commands from the
     main thread through the pipe and takes asynchronously executes the command,
     then returns the results through the pipe.
     '''
+    parent_remote.close()
     # Build environment at start
     env = env_fn_wrapper.x(idx)
     # Loop until environment is closed
@@ -54,9 +55,7 @@ class ParallelEnv():
     '''
     def __init__(self, env_fns):
         nenvs = len(env_fns)
-        
-        # Multi-processing is by default forked, but Tensorflow isn't fork safe
-        multiprocessing.set_start_method("spawn")
+        ctx = multiprocessing.get_context("fork")
 
         # Build pipes for communication to and from processed
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
@@ -65,13 +64,15 @@ class ParallelEnv():
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
         # Build processes
-        self.ps = [Process(target=worker, args=(work_remote, CloudpickleWrapper(env_fn), idx))
-                   for idx, (work_remote, env_fn) in enumerate(zip(self.work_remotes, env_fns))]
+        self.ps = [ctx.Process(target=worker, args=(remote, work_remote, CloudpickleWrapper(env_fn), idx))
+                   for idx, (remote, work_remote, env_fn)
+                   in enumerate(zip(self.remotes, self.work_remotes, env_fns))]
 
         # Start processes
-        for p in self.ps:
+        for p, w_r in zip(self.ps, self.work_remotes):
             p.daemon = True
             p.start()
+            w_r.close()
 
         # Re-enable gpu for our main process
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
