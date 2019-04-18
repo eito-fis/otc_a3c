@@ -71,7 +71,7 @@ class ActorCriticModel(tf.keras.models.Model):
         for i,(neurons) in enumerate(actor_fc):
             critic_x = tf.keras.layers.Dense(neurons,
                                              activation="relu",
-                                             name="actor_dense_{}".format(i))(critic_x)
+                                             name="critic_dense_{}".format(i))(critic_x)
 
         # Build the output layers for the actor and critic models
         actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits')(actor_x)
