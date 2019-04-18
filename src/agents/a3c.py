@@ -494,7 +494,7 @@ class Worker(threading.Thread):
 
                     # Update model
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor)
+                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor, floor_reward)
                     self.ep_loss += total_loss
 
                     # Calculate and apply policy gradients
@@ -525,14 +525,15 @@ class Worker(threading.Thread):
                      gamma,
                      save_visual,
                      stacked_state,
-                     final_floor):
+                     final_floor,
+                     floor_reward):
         # If not done, estimate the future discount reward of being in the final state
         # using the critic model
         if done:
             reward_sum = 0.
         else:
             reward_sum = self.local_model.critic_model([stacked_state[None, :],
-                                                        np.array([final_floor], dtype=np.float32)[None, :]])
+                                                        np.array([final_floor, floor_reward], dtype=np.float32)[None, :]])
             reward_sum = np.squeeze(reward_sum.numpy())
 
         # Get discounted rewards
@@ -553,7 +554,7 @@ class Worker(threading.Thread):
 
         # Get logits and values
         logits, values = self.local_model([np.array(stacked_states, dtype=np.float32),
-                                           np.array(memory.floors, dtype=np.float32)[:, None]])
+                                           np.array([memory.floors, memory.floor_rewards], dtype=np.float32).swapaxes(0, 1)])
 
         # Calculate our advantages
         advantage = np.array(discounted_rewards)[:, None] - values
