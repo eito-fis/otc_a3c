@@ -1,5 +1,6 @@
 
 import os
+from tqdm import tqdm
 from collections import deque
 
 import numpy as np
@@ -116,7 +117,7 @@ class PPOAgent():
                 # Shuffle indicies
                 np.random.shuffle(indicies)
 
-                for start in tqdm(range(0, self.b_size, self.mb_size), "Epoch {}".format(e)):
+                for start in tqdm(range(0, self.b_size, self.mb_size), "\tEpoch {}".format(e)):
                     # Generate minibatch
                     end = start + self.mb_size
                     mb_indicies = indicies[start:end]
@@ -192,9 +193,8 @@ class PPOAgent():
         avg_value_loss = np.mean(value_loss)
         avg_ratio = np.mean(ratio)
 
-        print("Epoch {} Metrics:".format(e))
-        print("\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
-        print("\t| Average Action Ratio: {} |".format(avg_ratio))
+        print("\t\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
+        print("\t\t| Average Action Ratio: {} |".format(avg_ratio))
 
     def log_step(self, rewards, values, policy_loss, entropy_loss, value_loss, ratio, ep_infos, i):
         # Pull specific info from info array and store in queue
