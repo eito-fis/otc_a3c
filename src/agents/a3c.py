@@ -122,10 +122,10 @@ class ActorCriticModel(keras.Model):
                                np.random.random((1, 2)).astype(np.float32)])
 
     def call(self, inputs):
-        obs, floor = inputs
+        obs, floor_info = inputs
 
         actor_logits = self.actor_model(obs)
-        value = self.critic_model([obs, floor])
+        value = self.critic_model([obs, floor_info])
 
         return actor_logits, value
 
