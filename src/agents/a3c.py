@@ -494,7 +494,7 @@ class Worker(threading.Thread):
 
                     # Update model
                     with tf.GradientTape() as tape:
-                        total_loss  = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor, floor_reward)
+                        total_loss = self.compute_loss(mem, done, self.gamma, save_visual, stacked_state, floor, floor_reward)
                     self.ep_loss += total_loss
 
                     # Calculate and apply policy gradients
@@ -576,6 +576,12 @@ class Worker(threading.Thread):
             memory.probs.extend(np.squeeze(tf.nn.softmax(logits).numpy()).tolist())
             memory.values.extend(np.squeeze(values.numpy()).tolist())
 
+        print("| Entropy Loss: {} |".format(entropy_loss))
+        values, discounted_rewards = np.squeeze(values), np.array(discounted_rewards)
+        explained_variance = self.explained_variance(np.array(values), np.array(discounted_rewards))
+        if explained_variance is not np.nan:
+            print("| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, np.var(discounted_rewards)))
+
         return policy_loss + (value_loss * self.value_discount)
 
     def log_episode(self, save_visual, current_episode, ep_steps, ep_reward, mem, total_loss):
@@ -623,3 +629,16 @@ class Worker(threading.Thread):
             _save_path = os.path.join(self.save_path, "worker_{}_model_{}.h5".format(self.worker_idx, current_episode))
             self.local_model.save_weights(_save_path)
             print("Checkpoint saved to {}".format(_save_path))
+    
+    def explained_variance(self, y_pred, y_true):
+        """
+        Computes fraction of variance that ypred explains about y.
+        Returns 1 - Var[y-ypred] / Var[y]
+        interpretation:
+            ev=0  =>  might as well have predicted zero
+            ev=1  =>  perfect prediction
+            ev<0  =>  worse than just predicting zero
+        """
+        assert y_true.ndim == 1 and y_pred.ndim == 1
+        var_y = np.var(y_true)
+        return np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
