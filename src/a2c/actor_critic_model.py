@@ -58,18 +58,23 @@ class ActorCriticModel(tf.keras.models.Model):
                     conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
             flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
             actor_x = flatten
+            critic_x = tf.keras.layers.concatenate([flatten, critic_input])
         else:
             actor_x = model_input
+            critic_x = tf.keras.layers.concatenate([model_input, critic_input])
 
         # Build the fully connected layers for the actor and critic models
         for i,(neurons) in enumerate(actor_fc):
             actor_x = tf.keras.layers.Dense(neurons,
                                             activation="relu",
-                                            name="dense_{}".format(i))(actor_x)
+                                            name="actor_dense_{}".format(i))(actor_x)
+        for i,(neurons) in enumerate(actor_fc):
+            critic_x = tf.keras.layers.Dense(neurons,
+                                             activation="relu",
+                                             name="actor_dense_{}".format(i))(critic_x)
 
         # Build the output layers for the actor and critic models
         actor_logits = tf.keras.layers.Dense(num_actions, name='policy_logits')(actor_x)
-        critic_x = tf.keras.layers.concatenate([actor_x, critic_input])
         value = tf.keras.layers.Dense(1, name='value')(critic_x)
 
         # Build the final total model
