@@ -78,7 +78,7 @@ class PPOAgent():
         self.update_epochs = update_epochs
         self.num_minibatches = num_minibatches
         self.b_size = num_steps * num_envs
-        self.minibatch_size = self.b_size // self.num_minibatches
+        self.mb_size = self.b_size // self.num_minibatches
         self.epsilon = epsilon
         self.num_actions = num_actions
 
@@ -116,9 +116,9 @@ class PPOAgent():
                 # Shuffle indicies
                 np.random.shuffle(indicies)
 
-                for start in range(0, self.b_size, self.minibatch_size):
+                for start in tqdm(range(0, self.b_size, self.mb_size), "Epoch {}".format(e)):
                     # Generate minibatch
-                    end = start + self.minibatch_size
+                    end = start + self.mb_size
                     mb_indicies = indicies[start:end]
                     mb_states, mb_rewards, mb_actions, mb_values, mb_probs = \
                             (arr[mb_indicies] for arr in (b_states, b_rewards,
@@ -126,6 +126,7 @@ class PPOAgent():
                                                           b_probs))
                     # Calculate advantages
                     advs = mb_rewards - mb_values
+
                     # Calculate loss
                     with tf.GradientTape() as tape:
                         # Get actions probabilities and values for all states
@@ -145,6 +146,7 @@ class PPOAgent():
                         clipped_policy_loss = advs * tf.clip_by_value(ratio,
                                                                       1 - self.epsilon,
                                                                       1 + self.epsilon) 
+
                         # Calculate our policy loss
                         policy_loss = tf.reduce_mean(tf.minimum(unclipped_policy_loss,
                                                                 clipped_policy_loss))
@@ -161,6 +163,7 @@ class PPOAgent():
 
                     # Calculate and apply gradient
                     total_grads = tape.gradient(total_loss, self.model.trainable_weights)
+                    total_grads, total_grad_norm = tf.clip_by_global_norm(total_grads, 0.5)
                     self.opt.apply_gradients(zip(total_grads, self.model.trainable_weights))
 
                     # Store minibatch metrics
