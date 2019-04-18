@@ -52,22 +52,25 @@ class Memory:
         self.actions = []
         self.rewards = []
         self.floors = []
+        self.floor_rewards = []
         self.obs = []
         self.probs = []
         self.values = []
         self.novelty = []
 
-    def store(self, state, action, reward, floor):
+    def store(self, state, action, reward, floor, floor_reward):
         self.states.append(state)
         self.actions.append(action)
         self.rewards.append(reward)
         self.floors.append(floor)
+        self.floor_rewards.append(floor_reward)
 
     def clear(self):
         self.states = []
         self.actions = []
         self.rewards = []
         self.floors = []
+        self.floor_rewards = []
         self.obs=[]
         self.probs = []
         self.novelty = []
@@ -91,7 +94,7 @@ class ActorCriticModel(keras.Model):
         conv_state_size = state_size
 
         self.model_input = tf.keras.layers.Input(shape=tuple(state_size))
-        self.critic_input = tf.keras.layers.Input(shape=(1,))
+        self.critic_input = tf.keras.layers.Input(shape=(2,))
 
         conv_x = self.model_input
         for (k,s,f) in conv_size:
@@ -116,7 +119,7 @@ class ActorCriticModel(keras.Model):
         self.dist = ProbabilityDistribution()
 
         self.get_action_value([np.random.random((1,) + tuple(state_size)).astype(np.float32),
-                               np.random.random((1, 1)).astype(np.float32)])
+                               np.random.random((1, 2)).astype(np.float32)])
 
     def call(self, inputs):
         obs, floor = inputs
@@ -458,6 +461,7 @@ class Worker(threading.Thread):
             action = 0
             time_count = 0
             floor = 0.0
+            floor_reward = 0.0
             done = False
 
             prev_states = [np.random.random(state.shape) for _ in range(self.stack_size)]
@@ -470,15 +474,19 @@ class Worker(threading.Thread):
                 else:
                     stacked_state = np.concatenate(prev_states, axis=-1).astype(np.float32)
                     action, _ = self.local_model.get_action_value([stacked_state[None, :],
-                                                                  np.array([floor], dtype=np.float32)[None, :]])
+                                                                  np.array([floor, floor_reward], dtype=np.float32)[None, :]])
 
                 (new_state, reward, done, _), new_obs = self.env.step(action)
                 ep_reward += reward
-                mem.store(state, action, reward, floor)
+                mem.store(state, action, reward, floor, floor_reward)
                 if save_visual:
                     mem.obs.append(obs)
 
-                if reward >= 1: floor += 1
+                if reward < .95:
+                    floor_reward += reward
+                else:
+                    floor += 1
+                    floor_reward = 0.0
 
                 if time_count == self.update_freq or done:
                     # Calculate gradient wrt to local model. We do so by tracking the
@@ -530,7 +538,10 @@ class Worker(threading.Thread):
         # Get discounted rewards
         discounted_rewards = []
         for reward in memory.rewards[::-1]:  # reverse buffer r
-            reward_sum = reward + gamma * reward_sum
+            if reward < .95:
+                reward_sum = reward + gamma * reward_sum
+            else:
+                reward_sum = reward
             discounted_rewards.append(reward_sum)
         discounted_rewards.reverse()
 
