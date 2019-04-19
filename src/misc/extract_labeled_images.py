@@ -76,11 +76,11 @@ def inside_door(memory):
 def save(true_inds, false_inds, memory_name, memory, true_path, false_path):
     for i in true_inds:
         img_name = os.path.join(true_path, '{}_{}.png'.format(memory_name, i))
-        img = Image.fromarray(np.array(memory.states[i][...,0] * 255., dtype=np.uint8), mode='L')
+        img = Image.fromarray(np.array(memory.obs[i][...,0] * 255., dtype=np.uint8), mode='L')
         img.save(img_name)
     for i in false_inds:
         img_name = os.path.join(false_path, '{}_{}.png'.format(memory_name, i))
-        img = Image.fromarray(np.array(memory.states[i][...,0] * 255., dtype=np.uint8), mode='L')
+        img = Image.fromarray(np.array(memory.obs[i][...,0] * 255., dtype=np.uint8), mode='L')
         img.save(img_name)
 
 
