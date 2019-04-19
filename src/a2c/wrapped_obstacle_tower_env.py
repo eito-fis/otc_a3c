@@ -114,14 +114,16 @@ class WrappedObstacleTowerEnv():
         self.current_reward = 0
 
         # Preprocess current obs and add to stack
-        if self.mobilenet:
-            observation = self.mobile_preprocess_observation(observation)
-        elif self.gray_scale:
-            observation = self.gray_preprocess_observation(observation)
         if self.retro:
             observation = (state / 255).astype(np.float32)
         else:
             observation = state[0]
+
+        if self.mobilenet:
+            observation = self.mobile_preprocess_observation(observation)
+        elif self.gray_scale:
+            observation = self.gray_preprocess_observation(observation)
+
         self.stack = self.stack[1:] + [observation]
 
         # Build our state (MUST BE A TUPLE)
@@ -171,14 +173,16 @@ class WrappedObstacleTowerEnv():
             ret_state = self.reset()
         else:
             # Preprocess current obs and add to stack
+            if self.retro:
+                observation = (state / 255).astype(np.float32)
+            else:
+                observation = state[0]
+
             if self.mobilenet:
                 observation = self.mobile_preprocess_observation(observation)
             elif self.gray_scale:
                 observation = self.gray_preprocess_observation(observation)
-            elif self.retro:
-                observation = (state / 255).astype(np.float32)
-            else:
-                observation = state[0]
+
             self.stack = self.stack[1:] + [observation]
 
             # Build our state (MUST BE A TUPLE)
