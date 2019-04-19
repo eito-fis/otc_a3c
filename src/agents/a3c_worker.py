@@ -46,7 +46,9 @@ def record(episode,
         global_ep_floor = global_ep_floor * 0.8 + episode_floor * 0.2
 
     # Print metrics
-    print("Episode: {} | Moving Average Reward: {} | Episode Reward: {} | Moving Average Floor: {} | Episode Floor: {} | Loss: {} | Explained Variance: {} | Steps: {} | Worker: {} | Entropy Loss: {}".format(episode, global_ep_reward, episode_reward, global_ep_floor, episode_floor, int(total_loss * 1000) / 1000, explained_variance, num_steps, worker_idx, entropy_loss))
+    print("| Episode: {} | Moving Average Reward: {} | Episode Reward: {} |".format(episode, global_ep_reward, episode_reward))
+    print("| Moving Average Floor: {} | Episode Floor: {} | Steps: {} |".format(global_ep_floor, episode_floor, num_steps))
+    print("| Explained Variance: {} | Worker: {} | Entropy Loss: {} |".format(explained_variance, worker_idx, entropy_loss))
 
     # Add metrics to queue
     result_queue.put(global_ep_reward)
@@ -340,7 +342,6 @@ class Worker(threading.Thread):
                                                                                          ep_steps,
                                                                                          explained_variance,
                                                                                          entropy_loss)
-        print(ep_values)
 
         # We must use a lock to save our model and to print to prevent data races.
         if ep_reward > Worker.best_score:
