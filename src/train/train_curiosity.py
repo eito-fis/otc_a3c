@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import gin
 import logging
 import argparse
 
@@ -67,7 +66,7 @@ def main(args,
                                visual_period=visual_period,
                                load_path=args.restore)
 
-    
+
     if args.eval:
         print("Starting evaluation...")
         master_agent.play()
@@ -124,5 +123,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
-    
+
     main(args)

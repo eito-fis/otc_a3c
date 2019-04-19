@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import gin
 import logging
 import argparse
 
@@ -76,5 +75,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
-    
+
     main(args)
