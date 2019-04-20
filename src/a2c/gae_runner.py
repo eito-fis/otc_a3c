@@ -59,7 +59,6 @@ class GAE_Runner():
                 ep_info = info.get("episode_info")
                 if ep_info is not None:
                     ep_infos.append(ep_info)
-        b_dones.append(self.dones)
 
         # Convert to numpy array and change shape from (num_steps, n_envs) to (n_envs, num_steps)
         b_states = np.asarray(b_states, dtype=self.states.dtype)
@@ -68,9 +67,8 @@ class GAE_Runner():
         b_values = np.asarray(b_values, dtype=np.float32)
         b_probs = np.asarray(b_probs, dtype=np.float32)
         b_dones = np.asarray(b_dones, dtype=np.bool)
-        b_dones = b_dones[:, 1:]
         true_rewards = np.copy(b_rewards)
-        last_values = self.model.get_values(self.states).tolist()
+        last_values = self.model.get_values(self.states)
 
         b_advs = np.zeros_like(b_rewards)
         true_reward = np.copy(b_rewards)
@@ -78,14 +76,22 @@ class GAE_Runner():
         for step in reversed(range(self.num_steps)):
             if step == self.num_steps - 1:
                 nextnonterminal = 1.0 - self.dones
-                next_floor_end = [0 for r in b_rewards[step]]
+                next_floor_end = np.ones(b_rewards[step])
                 nextvalues = last_values
             else:
                 nextnonterminal = 1.0 - b_dones[step + 1]
-                next_floor_end = [1 if r >= 0.95 else 0 for r in b_rewards[step + 1]]
-                nextvalues = mb_values[step + 1]
-            delta = b_rewards[step] + self.gamma * nextvalues * nextnonterminal * next_floor_end - b_values[step]
+                next_floor_end = np.array([0. if r >= 0.95 else 1. for r in b_rewards[step + 1]])
+                nextvalues = b_values[step + 1]
+                print(b_dones[step + 1])
+                print(b_rewards[step + 1])
+            delta = b_rewards[step] + self.gamma * nextvalues * nextnonterminal * next_floor_end  - b_values[step]
             b_advs[step] = last_gae_lam = delta + self.gamma * self.lam * last_gae_lam * nextnonterminal * next_floor_end
+            print(nextnonterminal)
+            print(next_floor_end)
+            print(nextvalues)
+            print(delta)
+            print(b_advs[step])
+            input()
         b_rewards = b_advs + b_values
 
         # Swap and flatten (num_steps, num_envs) to (num_envs * num_steps) so we have one big batch

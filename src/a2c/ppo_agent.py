@@ -8,6 +8,7 @@ import tensorflow as tf
 
 from src.a2c.parallel_env import ParallelEnv
 from src.a2c.actor_critic_model import ActorCriticModel
+from src.a2c.runner import Runner
 from src.a2c.gae_runner import GAE_Runner
 
 class PPOAgent():
@@ -63,9 +64,9 @@ class PPOAgent():
             self.model.load_weights(restore_dir)
         
         # Build runner
-        self.runner = GAE_Runner(env=self.env,
-                                 model=self.model,
-                                 num_steps=num_steps)
+        self.runner = Runner(env=self.env,
+                             model=self.model,
+                             num_steps=num_steps)
 
         # Build optimizer
         self.opt = tf.optimizers.Adam(learning_rate)
@@ -104,7 +105,7 @@ class PPOAgent():
             print("\nStarting training step {}...\n".format(i))
 
             # Reset step logging
-            step_policy_loss, step_entropy_loss, step_value_loss, step_ratio = [], [], [], []
+            step_policy_loss, step_entropy_loss, step_value_loss, step_clip_frac = [], [], [], []
             # Generate indicies for minibatch sampling
             indicies = np.arange(self.b_size)
             # Generate a batch from one rollout
@@ -114,7 +115,7 @@ class PPOAgent():
             print("\nStarting PPO updates...")
             for e in range(self.update_epochs):
                 # Reset epoch logging
-                epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_ratio = [], [], [], []
+                epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_clip_frac = [], [], [], []
                 # Shuffle indicies
                 np.random.shuffle(indicies)
 
@@ -144,11 +145,11 @@ class PPOAgent():
 
                         # Calculate our policy loss
                         ratio = cur_probs / mb_probs
-                        unclipped_policy_loss = advs * ratio
-                        clipped_policy_loss = advs * tf.clip_by_value(ratio,
+                        unclipped_policy_loss = -advs * ratio
+                        clipped_policy_loss = -advs * tf.clip_by_value(ratio,
                                                                       1 - self.epsilon,
                                                                       1 + self.epsilon) 
-                        policy_loss = tf.reduce_mean(tf.minimum(unclipped_policy_loss,
+                        policy_loss = tf.reduce_mean(tf.maximum(unclipped_policy_loss,
                                                                 clipped_policy_loss))
                         # Calculate our entropy loss
                         cce = tf.keras.losses.CategoricalCrossentropy()
@@ -170,30 +171,33 @@ class PPOAgent():
                     epoch_policy_loss.append(policy_loss.numpy())
                     epoch_entropy_loss.append(entropy_loss.numpy())
                     epoch_value_loss.append(value_loss.numpy())
-                    epoch_ratio.extend(ratio.numpy().tolist())
+
+                    # Calculate the fraction of our mini batch that was clipped
+                    clips = tf.greater(tf.abs(ratio - 1), self.epsilon)
+                    clip_frac = tf.reduce_mean(tf.cast(clips, tf.float32))
+                    epoch_clip_frac.append(clip_frac)
 
                 # Log epoch data
-                self.log_epoch(e, epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_ratio)
+                self.log_epoch(e, epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_clip_frac)
                 # Store epoch metrics
                 step_policy_loss.append(np.mean(epoch_policy_loss))
                 step_entropy_loss.append(np.mean(epoch_entropy_loss))
                 step_value_loss.append(np.mean(epoch_value_loss))
-                step_ratio.append(np.mean(epoch_ratio))
 
             # Log step data
             self.log_step(b_rewards, b_values, step_policy_loss, step_entropy_loss,
-                          step_value_loss, step_ratio, ep_infos, i)
+                          step_value_loss, epoch_clip_frac, ep_infos, i)
 
-    def log_epoch(self, e, policy_loss, entropy_loss, value_loss, ratio):
+    def log_epoch(self, e, policy_loss, entropy_loss, value_loss, clip_frac):
         avg_policy_loss = np.mean(policy_loss)
         avg_entropy_loss = np.mean(entropy_loss)
         avg_value_loss = np.mean(value_loss)
-        avg_ratio = np.mean(ratio)
+        avg_clip_frac = np.mean(clip_frac)
 
         print("\t\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
-        print("\t\t| Average Action Ratio: {} |".format(avg_ratio))
+        print("\t\t| Fraction Clipped: {} |".format(avg_clip_frac))
 
-    def log_step(self, rewards, values, policy_loss, entropy_loss, value_loss, ratio, ep_infos, i):
+    def log_step(self, rewards, values, policy_loss, entropy_loss, value_loss, clip_frac, ep_infos, i):
         # Pull specific info from info array and store in queue
         for info in ep_infos:
             self.floor_queue.append(info["floor"])
@@ -205,14 +209,13 @@ class PPOAgent():
         avg_policy_loss = np.mean(policy_loss)
         avg_entropy_loss = np.mean(entropy_loss)
         avg_value_loss = np.mean(value_loss)
-        avg_ratio = np.mean(ratio)
+        avg_clip_frac = np.mean(clip_frac)
         explained_variance, env_variance = self.explained_variance(values, rewards)
 
         print("\nTrain Step Metrics:")
         print("\t| Total Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
         print("\t| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, env_variance))
-        print("\t| Average Action Ratio: {} |".format(avg_ratio))
         print()
 
         # Periodically log
@@ -224,7 +227,7 @@ class PPOAgent():
                 tf.summary.scalar("Entropy Loss", avg_entropy_loss, i)
                 tf.summary.scalar("Value Loss", avg_value_loss, i)
                 tf.summary.scalar("Explained Variance", explained_variance, i)
-                tf.summary.scalar("Ratio", avg_ratio, i)
+                tf.summary.scalar("Fraction Clipped", avg_clip_frac, i)
         # Periodically save checkoints
         if i % self.checkpoint_period == 0:
             model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
