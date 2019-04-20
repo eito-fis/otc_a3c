@@ -8,7 +8,7 @@ import tensorflow as tf
 
 from src.a2c.parallel_env import ParallelEnv
 from src.a2c.actor_critic_model import ActorCriticModel
-from src.a2c.runner import Runner
+from src.a2c.gae_runner import GAE_Runner
 
 class PPOAgent():
     '''
@@ -63,9 +63,9 @@ class PPOAgent():
             self.model.load_weights(restore_dir)
         
         # Build runner
-        self.runner = Runner(env=self.env,
-                             model=self.model,
-                             num_steps=num_steps)
+        self.runner = GAE_Runner(env=self.env,
+                                 model=self.model,
+                                 num_steps=num_steps)
 
         # Build optimizer
         self.opt = tf.optimizers.Adam(learning_rate)
@@ -101,7 +101,7 @@ class PPOAgent():
 
     def train(self):
         for i in range(self.train_steps):
-            print("Starting training step {}...\n".format(i))
+            print("\nStarting training step {}...\n".format(i))
 
             # Reset step logging
             step_policy_loss, step_entropy_loss, step_value_loss, step_ratio = [], [], [], []
@@ -142,14 +142,12 @@ class PPOAgent():
                         one_hot_actions = tf.one_hot(mb_actions, self.num_actions)
                         cur_probs = tf.reduce_sum(logits * one_hot_actions, axis=-1)
 
-                        # Calculate and clip ratio
+                        # Calculate our policy loss
                         ratio = cur_probs / mb_probs
                         unclipped_policy_loss = advs * ratio
                         clipped_policy_loss = advs * tf.clip_by_value(ratio,
                                                                       1 - self.epsilon,
                                                                       1 + self.epsilon) 
-
-                        # Calculate our policy loss
                         policy_loss = tf.reduce_mean(tf.minimum(unclipped_policy_loss,
                                                                 clipped_policy_loss))
                         # Calculate our entropy loss
