@@ -108,7 +108,6 @@ def lets_do_this(memory_dir, output_dir, label):
     os.makedirs(false_path)
 
     for mi, memory_name in enumerate(os.listdir(memory_dir)):
-        if 'floor0' in memory_name: continue
         print('-> {}'.format(memory_name))
         with open(os.path.join(memory_dir,memory_name), 'rb') as mf:
             memory = pickle.load(mf)
