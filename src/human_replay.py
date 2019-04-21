@@ -13,7 +13,7 @@ from src.agents.a3c import Memory
 
 def input_action():    # 0    1    2    3    4    5    6    7    8    9
     # possible_actions = ['w', 'k', 'l', ' ', 'p', 's', 'd', 'a', ',', '.']
-    possible_actions = ['w', 'k', 'l', ' ']
+    possible_actions = ['w', 'k', 'l', ' ', 'p']
     while True:
         action = getch.getch()
         if action in possible_actions:
@@ -92,7 +92,7 @@ def custom_memory(custom_filepath, output_filepath):
     input_buffer_file = open(input_filepath, 'rb')
     memory_buffer = pickle.load(input_buffer_file)
     input_buffer_file.close()
-    
+
     custom_memories = []
     for memory in memory_buffer:
         for i in range(len(memory.actions)):
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     parser.add_argument('--concat-dir', type=str, default=None)
     parser.add_argument('--custom-filepath', type=str, default=None)
     args = parser.parse_args()
-    
+
     #INITIALIZE VARIABLES#
     env_filepath = args.env_filepath
     output_filepath = args.output_filepath
@@ -129,7 +129,7 @@ if __name__ == '__main__':
 
     if args.concat_dir:
         concatenate_memories(args.concat_dir, output_filepath)
-    
+
     if args.custom_filepath:
         custom_memory(args.custom_filepath, output_filepath)
 
@@ -177,5 +177,5 @@ if __name__ == '__main__':
                 output_file.close()
         output_file = open(output_filepath, 'wb+')
         pickle.dump(memory_buffer, output_file)
-        
+
     output_file.close()
