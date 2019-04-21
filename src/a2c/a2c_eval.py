@@ -18,19 +18,21 @@ class Memory:
         self.states = []
         self.actions = []
         self.rewards = []
+        self.floor = []
         self.obs = []
         self.probs = []
-        self.values = []
 
-    def store(self, state, action, reward):
+    def store(self, state, action, reward, floor):
         self.states.append(state)
         self.actions.append(action)
         self.rewards.append(reward)
+        self.floor.append(floor)
 
     def clear(self):
         self.states = []
         self.actions = []
         self.rewards = []
+        self.floor = []
         self.obs = []
         self.probs = []
 
@@ -55,8 +57,9 @@ class A2C_Eval():
         while current_episode < self.max_episodes:
             seed = np.random.randint(0, 100)
             self.env._obstacle_tower_env.seed(seed)
-            floor = np.random.randint(0, self.max_floor)
-            # self.env.floor(floor)
+            # floor = np.random.randint(0, self.max_floor)
+            floor = 0
+            self.env.floor(floor)
             state = self.env.reset()
             mem.clear()
 
@@ -65,25 +68,25 @@ class A2C_Eval():
             done = False
             passed = False
             while not done:
-                action, value = self.model.step([state])
+                action, value, _ = self.model.step([state])
 
                 new_state, reward, done, _ = self.env.step(action)
 
                 total_reward += reward
                 if self.memory_dir is not None:
-                    mem.store(state, action, reward)
-                    # mem.probs.append(probs)
-                    # mem.obs.append(obs)
-                if reward == 1:
+                    mem.store(state, action, reward, floor)
+                if reward > .95:
                     passed = True
                     break
 
                 time_count += 1
                 state = new_state
-                # obs = new_obs
             print("Episode {} | Seed {} | Floor {} | Reward {}".format(current_episode, seed, floor, total_reward))
-            if self.memory_dir is not None:
-                output_filepath = os.path.join(self.memory_dir, "memory_episode_{}".format(current_episode))
+            if self.memory_dir:
+                if passed: 
+                    output_filepath = os.path.join(self.memory_dir, "pass_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
+                else:
+                    output_filepath = os.path.join(self.memory_dir, "fail_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
                 os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
                 print("Saving memory to output file path {}".format(output_filepath))
                 output_file = open(output_filepath, 'wb+')
@@ -104,7 +107,7 @@ if __name__ == '__main__':
 
     #INITIALIZE ENVIRONMENT#
     env = WrappedObstacleTowerEnv(args.env_filename,
-                                  stack_size=4,
+                                  stack_size=2,
                                   worker_id=0,
                                   mobilenet=args.mobilenet,
                                   gray_scale=args.gray,
@@ -114,10 +117,10 @@ if __name__ == '__main__':
     print("Building model...")
     model = ActorCriticModel(num_actions=4,
                              state_size=[84,84,3],
-                             stack_size=4,
+                             stack_size=2,
                              actor_fc=(1024,512),
                              critic_fc=(1024,512),
-                             conv_size=((8,4,32),(4,2,64),(3,1,64)))
+                             conv_size=((8,4,16),(4,2,32),(3,1,64)))
     if args.restore is not None:
         model.load_weights(args.restore)
     print("Model built!")
@@ -126,6 +129,6 @@ if __name__ == '__main__':
     agent = A2C_Eval(env=env,
                      model=model,
                      memory_dir=args.memory_dir,
-                     max_episodes=100,
+                     max_episodes=1000,
                      max_floor=5)
     agent.run()
