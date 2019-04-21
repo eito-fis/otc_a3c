@@ -64,6 +64,9 @@ class PPOAgent():
             self.model.load_weights(restore_dir)
         
         # Build runner
+        self.runner = Runner(env=self.env,
+                             model=self.model,
+                             num_steps=num_steps)
         self.runner = GAE_Runner(env=self.env,
                                  model=self.model,
                                  num_steps=num_steps)
@@ -129,6 +132,7 @@ class PPOAgent():
                                                           b_probs))
                     # Calculate advantages
                     advs = mb_rewards - mb_values
+                    #advs = (advs - advs.mean()) / (advs.std() + 1e-8)
 
                     # Calculate loss
                     with tf.GradientTape() as tape:
