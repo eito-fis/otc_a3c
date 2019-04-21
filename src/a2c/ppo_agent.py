@@ -64,9 +64,9 @@ class PPOAgent():
             self.model.load_weights(restore_dir)
         
         # Build runner
-        self.runner = Runner(env=self.env,
-                             model=self.model,
-                             num_steps=num_steps)
+        self.runner = GAE_Runner(env=self.env,
+                                 model=self.model,
+                                 num_steps=num_steps)
 
         # Build optimizer
         self.opt = tf.optimizers.Adam(learning_rate)

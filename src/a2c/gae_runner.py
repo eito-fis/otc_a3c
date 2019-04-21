@@ -76,22 +76,14 @@ class GAE_Runner():
         for step in reversed(range(self.num_steps)):
             if step == self.num_steps - 1:
                 nextnonterminal = 1.0 - self.dones
-                next_floor_end = np.ones(b_rewards[step])
+                next_floor_end = np.ones_like(b_rewards[step])
                 nextvalues = last_values
             else:
                 nextnonterminal = 1.0 - b_dones[step + 1]
                 next_floor_end = np.array([0. if r >= 0.95 else 1. for r in b_rewards[step + 1]])
                 nextvalues = b_values[step + 1]
-                print(b_dones[step + 1])
-                print(b_rewards[step + 1])
             delta = b_rewards[step] + self.gamma * nextvalues * nextnonterminal * next_floor_end  - b_values[step]
             b_advs[step] = last_gae_lam = delta + self.gamma * self.lam * last_gae_lam * nextnonterminal * next_floor_end
-            print(nextnonterminal)
-            print(next_floor_end)
-            print(nextvalues)
-            print(delta)
-            print(b_advs[step])
-            input()
         b_rewards = b_advs + b_values
 
         # Swap and flatten (num_steps, num_envs) to (num_envs * num_steps) so we have one big batch
@@ -100,12 +92,12 @@ class GAE_Runner():
                                b_values, b_probs, true_rewards))
         return b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_rewards, ep_infos
 
-    def flatten(self, arr):
+    def swap_and_flatten(self, arr):
         """
         Flatten the first two axis
         """
         shape = arr.shape
-        return arr.swap_axes(0, 1).reshape(shape[0] * shape[1], *shape[2:])
+        return arr.swapaxes(0, 1).reshape(shape[0] * shape[1], *shape[2:])
 
 
 

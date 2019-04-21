@@ -13,7 +13,7 @@ import tensorflow as tf
 def main(args,
          train_steps=2500,
          update_epochs=10,
-         num_minibatches=8,
+         num_minibatches=2,
          learning_rate=0.000042,
          entropy_discount=0.00,
          value_discount=0.,
