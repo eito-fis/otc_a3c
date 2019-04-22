@@ -39,7 +39,7 @@ def lets_do_this(images_dir, model_dir, label):
             bad += 1
         all += 1
 
-        print('{} {:.2f}% good, {} {:.2f}% bad,'.format(good, good*100./all, bad, bad*100./all))
+        print('\r{} {:.2f}% good, {} {:.2f}% bad'.format(good, good*100./all, bad, bad*100./all), end='')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('use teacher model to select more images')
