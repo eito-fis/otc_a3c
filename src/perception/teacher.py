@@ -3,26 +3,9 @@ import os
 import numpy as np
 from PIL import Image
 import tensorflow as tf
-import tensorflow_hub as tf_hub
 from sklearn.model_selection import train_test_split
 
-class Teacher(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.conv = tf_hub.KerasLayer(
-            "https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
-            output_shape=[1280],
-            trainable=False,
-        )
-        self.dense1 = tf.keras.layers.Dense(8, activation='relu')
-        self.result = tf.keras.layers.Dense(1, activation='sigmoid')
-
-    def call(self, data):
-        data = tf.cast(data, tf.float32) / 255.
-        data = self.conv(data)
-        data = self.dense1(data)
-        data = self.result(data)
-        return data
+from src.perception.model_teacher import Teacher
 
 def load_images(path):
     images = []
@@ -81,8 +64,8 @@ def lets_do_this(images_dir, model_dir, label):
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir, histogram_freq=1)
     model.fit(
         x=train_dataset,
-        epochs=200,
-        steps_per_epoch=100,
+        epochs=20,
+        steps_per_epoch=50,
         validation_data=test_dataset,
         callbacks=[tensorboard_callback],
     )

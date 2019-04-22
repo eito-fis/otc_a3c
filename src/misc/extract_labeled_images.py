@@ -5,6 +5,9 @@ import sys
 import os
 from PIL import Image
 import random
+import tensorflow as tf
+
+from src.perception.model_teacher import Teacher
 
 def closed_door(memory):
     k = 1
@@ -72,6 +75,39 @@ def inside_door(memory):
     false_inds = random.sample(maybe_false_inds - true_inds, len(true_inds))
     return true_inds, false_inds
 
+def exit_door(memory):
+    k = 3
+
+    true_inds = set()
+    false_inds = set()
+    inds = set(range(len(memory.rewards)))
+    maybe_false_inds = set(inds)
+
+    last_i = None
+    for i in inds:
+        if memory.rewards[i] > 0.95 and memory.rewards[i] < 1.05:
+            true_inds |= {j for j in range(i-k+1,i+1)}
+            maybe_false_inds -= {j for j in range(i-10,i+1)}
+
+    false_inds = random.sample(maybe_false_inds - true_inds, len(true_inds))
+    return true_inds, false_inds
+
+def model_door(model, memory):
+    true_inds = []
+    false_inds = []
+
+    batch_size = 128
+    threshold = 0.9
+
+    for i in range(0,len(memory.rewards),batch_size):
+        predictions = tf.reshape(model(memory.obs[i:i+batch_size]), (-1,)).numpy()
+        for j, prediction in enumerate(predictions):
+            if prediction >= threshold:
+                true_inds.append(i+j)
+            elif (1.-prediction) >= threshold:
+                false_inds.append(i+j)
+
+    return true_inds, false_inds
 
 def save(true_inds, false_inds, memory_name, memory, true_path, false_path):
     for i in true_inds:
@@ -84,12 +120,19 @@ def save(true_inds, false_inds, memory_name, memory, true_path, false_path):
         img.save(img_name)
 
 
-def lets_do_this(memory_dir, output_dir, label):
+def lets_do_this(memory_dir, output_dir, model_dir, label):
     os.makedirs(output_dir, exist_ok=True)
     true_path = os.path.join(output_dir, label)
     false_path = os.path.join(output_dir, 'not_'+label)
     os.makedirs(true_path)
     os.makedirs(false_path)
+
+    if model_dir is not None:
+        model = Teacher()
+        sample_input = tf.convert_to_tensor(np.zeros(224,224,3),dtype=np.uint8)[None,:]
+        sample_output = model(sample_input)
+        model_name = 'is_'+label
+        model.load_weights(os.path.join(model_dir, 'checkpoints', model_name))
 
     for mi, memory_name in enumerate(os.listdir(memory_dir)):
         if 'floor0' in memory_name: continue
@@ -104,31 +147,34 @@ def lets_do_this(memory_dir, output_dir, label):
         print('   Number of memories: {}'.format(len(memories)))
 
         for i, memory in enumerate(memories):
-            if label == 'closed_door':
+            if model_dir is not None:
+                true_inds, false_inds = model_door(model, memory)
+            elif label == 'closed_door':
                 true_inds, false_inds = closed_door(memory)
-                save(true_inds, false_inds, memory_name, memory, true_path, false_path)
-                print('   #{}: {} true, {} false'.format(i+1,len(true_inds),len(false_inds)))
             elif label == 'open_door':
                 true_inds, false_inds = open_door(memory)
-                save(true_inds, false_inds, memory_name, memory, true_path, false_path)
-                print('   #{}: {} true, {} false'.format(i+1,len(true_inds),len(false_inds)))
             elif label == 'inside_door':
                 true_inds, false_inds = inside_door(memory)
-                save(true_inds, false_inds, memory_name, memory, true_path, false_path)
-                print('   #{}: {} true, {} false'.format(i+1,len(true_inds),len(false_inds)))
+            elif label == 'exit_door':
+                true_inds, false_inds = exit_door(memory)
             else:
                 raise Exception('Unknown label "{}"'.format(label))
+            save(true_inds, false_inds, memory_name, memory, true_path, false_path)
+            print('   #{}: {} true, {} false'.format(i+1,len(true_inds),len(false_inds)))
+
 
 if __name__ == '__main__':
     #PARSE COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser('exract images based on some criteria')
     parser.add_argument('--memory-dir', type=str, required=True, help='directory with memory files')
     parser.add_argument('--output-dir', type=str, required=True, help='directory with extracted images')
-    parser.add_argument('--label', type=str, required=True, choices=['closed_door', 'open_door', 'inside_door'], help='criteria for the images')
+    parser.add_argument('--label', type=str, required=True, choices=['closed_door', 'open_door', 'inside_door', 'exit_door'], help='criteria for the images')
+    parser.add_argument('--model-dir', type=str, default=None, help='use model as criteria, path to directory with is_label model')
     args = parser.parse_args()
 
     memory_dir = args.memory_dir
     output_dir = args.output_dir
+    model_dir = args.model_dir
     label = args.label
 
-    lets_do_this(memory_dir, output_dir, label)
+    lets_do_this(memory_dir, output_dir, model_dir, label)
