@@ -50,12 +50,27 @@ class ActorCriticModel(tf.keras.models.Model):
                                                 kernel_size=k,
                                                 strides=s,
                                                 filters=f,
-                                                use_bias=False,
+                                                activation="relu",
                                                 name="conv_{}".format(i))(conv_x)
                 #conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
-                #conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+                conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
                 if max_pooling:
                     conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
+            '''
+
+            # Quake 3 Deepmind style convolutions
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32)(conv_x)
+            conv_x = tf.keras.layers.Activation("relu")(conv_x)
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64)(conv_x)
+            conv_x = skip_1 = tf.keras.layers.Activation("relu")(conv_x)
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)(conv_x)
+            conv_x = skip_2 = tf.keras.layers.add([conv_x, skip_1])
+            conv_x = tf.keras.layers.Activation("relu")(conv_x)
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)(conv_x)
+            conv_x = tf.keras.layers.add([conv_x, skip_2])
+            conv_x = tf.keras.layers.Activation("relu")(conv_x)
+            '''
+
             flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
             actor_x = flatten
             critic_x = tf.keras.layers.concatenate([flatten, critic_input])
