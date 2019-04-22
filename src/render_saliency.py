@@ -10,7 +10,6 @@ import cv2
 from src.a2c.a2c_agent import ActorCriticModel as A2CModel
 from src.a2c.a2c_eval import Memory
 
-IMAGE_SIZE = 84
 NOISE_WEIGHT = .5
 THRESHOLD = 0
 
@@ -23,8 +22,8 @@ OFFSET = 2
 def superimpose(source_image, noise_image):
     new_image = cv2.normalize(source_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     noise_image = cv2.normalize(noise_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    for y in range(IMAGE_SIZE):
-        for x in range(IMAGE_SIZE):
+    for y in range(IMAGE_SHAPE[0]):
+        for x in range(IMAGE_SHAPE[1]):
             new_image[x,y] = (np.multiply(NOISE_WEIGHT,noise_image[x,y]) + np.multiply((1-NOISE_WEIGHT),new_image[x,y]))
     new_image = cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB)
     return new_image
@@ -83,24 +82,43 @@ def generate_saliency(model, source_image, prev_images, floor_data, masks, blur_
         critic_saliency_map = critic_saliency_map + np.multiply(critic_saliency, mask)
     actor_saliency_map = cv2.normalize(actor_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
     critic_saliency_map = cv2.normalize(critic_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-    # rgb_saliency_map = (np.zeros(IMAGE_SHAPE) + saliency_map[:,:,None]) * [1,0,0]
+    return actor_saliency_map, critic_saliency_map
+
+def generate_prev_saliency(model, source_image, prev_image, floor_data, masks, blur_coeff, stride):
+    actor_saliency_map, critic_saliency_map = np.zeros(IMAGE_SHAPE[:-1]), np.zeros(IMAGE_SHAPE[:-1])
+    stacked_image = np.concatenate([prev_image, source_image], axis=-1).astype(np.float32)
+    state = model.process_inputs([(stacked_image, floor_data)])
+    logits, value = model(state)
+    logits, value = np.squeeze(logits.numpy()), np.squeeze(value.numpy())
+    blurred_image = cv2.blur(prev_image, (blur_coeff,blur_coeff))
+    for mask in masks:
+        perturbed_image = perturb_image(prev_image, blurred_image, mask)
+        stacked_image = np.concatenate([perturbed_image, source_image], axis=-1).astype(np.float32)
+        perturbed_state = model.process_inputs([(stacked_image, floor_data)])
+        perturbed_logits, perturbed_value = model(perturbed_state)
+        perturbed_logits, perturbed_value = np.squeeze(perturbed_logits.numpy()), np.squeeze(perturbed_value.numpy())
+        actor_saliency = sum(np.square(logits - perturbed_logits)) / 2
+        actor_saliency_map = actor_saliency_map + np.multiply(actor_saliency, mask)
+        critic_saliency = np.square(value - perturbed_value) / 2
+        critic_saliency_map = critic_saliency_map + np.multiply(critic_saliency, mask)
+    actor_saliency_map = cv2.normalize(actor_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    critic_saliency_map = cv2.normalize(critic_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
     return actor_saliency_map, critic_saliency_map
 
 masks = generate_masks(IMAGE_SHAPE[:-1], MASK_RADIUS, STRIDE)
 
-def draw_observation(frame, observation):
-    x = 0
-    y = 0
-    width = 672
-    height = 672
+def draw_current_frame(frame, current_image, prev_image):
+    width = 640
+    height = 640
 
-    if observation.ndim < 3: # IF RETRO
-        image = cv2.cvtColor(observation, cv2.COLOR_GRAY2RGB)
-    else:
-        image = observation
-    image = cv2.resize(image, dsize=(height,width), interpolation=cv2.INTER_NEAREST)
-    # image = cv2.normalize(image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    frame[y:y+height,x:x+width,:] = image
+    current_image = cv2.resize(current_image, dsize=(height,width), interpolation=cv2.INTER_NEAREST)
+    prev_image = cv2.resize(prev_image, dsize=(height,width), interpolation=cv2.INTER_NEAREST)
+
+    frame[0:height,0:width,:] = prev_image
+    cv2.putText(frame,'prev_image',(0,height+12),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
+
+    frame[0:height,width:width*2,:] = current_image
+    cv2.putText(frame,'current_image',(width,height+12),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
 
 def draw_distributions(frame, distribution, max_dist):
     x = 800
@@ -172,26 +190,53 @@ if __name__ == '__main__':
                      conv_size=CONV_SIZE)
     model.load_weights(args.restore)
 
-    # prev_states = [np.random.random(STATE_SHAPE) for _ in range(STACK_SIZE)]
     #RENDER VIDEO#
     print("Rendering...")
     for i, (state, floor_data) in enumerate(frame_data):
         current_image = state[:,:,3:]
         prev_images = state[:,:,:3]
         frame = np.zeros((height,width,3),dtype=np.uint8)
+
         actor_saliency_map, critic_saliency_map = generate_saliency(model, current_image, prev_images, floor_data, masks, BLUR_COEFF, STRIDE)
         actor_saliency_map = (np.zeros(IMAGE_SHAPE) + actor_saliency_map[:,:,None]) * [1,0,0]
         critic_saliency_map = (np.zeros(IMAGE_SHAPE) + critic_saliency_map[:,:,None]) * [0,0,1]
         rgb_saliency_map = actor_saliency_map + critic_saliency_map
         actor_image = superimpose(current_image.astype(np.float32), actor_saliency_map.astype(np.float32))
         critic_image = superimpose(current_image.astype(np.float32), critic_saliency_map.astype(np.float32))
-        rgb_image = superimpose(current_image.astype(np.float32), rgb_saliency_map.astype(np.float32))
-        actor_image_path = os.path.join(args.output_dir, 'actor_saliency_map_{}.png'.format(i))
-        critic_image_path = os.path.join(args.output_dir, 'critic_saliency_map_{}.png'.format(i))
+        current_rgb_image = superimpose(current_image.astype(np.float32), rgb_saliency_map.astype(np.float32))
+        actor_image_path = os.path.join(args.output_dir, 'actor_saliency_{}_current.png'.format(i))
+        critic_image_path = os.path.join(args.output_dir, 'critic_saliency_{}_current.png'.format(i))
         cv2.imwrite(actor_image_path, actor_image)
         cv2.imwrite(critic_image_path, critic_image)
-        draw_observation(frame,rgb_image)
-        cv2.putText(frame,'Step: {}'.format(i),(750,100),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
+
+        actor_saliency_map, critic_saliency_map = generate_prev_saliency(model, current_image, prev_images, floor_data, masks, BLUR_COEFF, STRIDE)
+        actor_saliency_map = (np.zeros(IMAGE_SHAPE) + actor_saliency_map[:,:,None]) * [1,0,0]
+        critic_saliency_map = (np.zeros(IMAGE_SHAPE) + critic_saliency_map[:,:,None]) * [0,0,1]
+        rgb_saliency_map = actor_saliency_map + critic_saliency_map
+        actor_image = superimpose(prev_images.astype(np.float32), actor_saliency_map.astype(np.float32))
+        critic_image = superimpose(prev_images.astype(np.float32), critic_saliency_map.astype(np.float32))
+        prev_rgb_image = superimpose(prev_images.astype(np.float32), rgb_saliency_map.astype(np.float32))
+        actor_image_path = os.path.join(args.output_dir, 'actor_saliency_{}_previous.png'.format(i))
+        critic_image_path = os.path.join(args.output_dir, 'critic_saliency_{}_previous.png'.format(i))
+        cv2.imwrite(actor_image_path, actor_image)
+        cv2.imwrite(critic_image_path, critic_image)
+
+        # combined_actor_saliency_map = np.concatenate([current_actor_saliency_map, prev_actor_saliency_map], axis=-1)
+
+        # current_actor_saliency_map = (current_actor_saliency_map - np.min(combined_actor_saliency_map)) / np.max(combined_actor_saliency_map)
+        # current_actor_saliency_map = (np.zeros(IMAGE_SHAPE) + current_actor_saliency_map[:,:,None]) * [1,0,0]
+        # current_actor_image = superimpose(current_image.astype(np.float32), current_actor_saliency_map.astype(np.float32))
+        # current_actor_image_path = os.path.join(args.output_dir, 'actor_saliency_{}_current.png'.format(i))
+        # cv2.imwrite(current_actor_image_path, current_actor_image)
+
+        # prev_actor_saliency_map = (prev_actor_saliency_map - np.min(combined_actor_saliency_map)) / np.max(combined_actor_saliency_map)
+        # prev_actor_saliency_map = (np.zeros(IMAGE_SHAPE) + prev_actor_saliency_map[:,:,None]) * [1,0,0]
+        # prev_actor_image = superimpose(prev_images.astype(np.float32), prev_actor_saliency_map.astype(np.float32))
+        # prev_actor_image_path = os.path.join(args.output_dir, 'actor_saliency_{}_previous.png'.format(i))
+        # cv2.imwrite(prev_actor_image_path, prev_actor_image)
+
+        draw_current_frame(frame, current_rgb_image, prev_rgb_image)
+        # cv2.putText(frame,'Step: {}'.format(i),(750,100),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
         # draw_distributions(frame, dist, dist_max)
         video.write(frame)
     print("Done!")
