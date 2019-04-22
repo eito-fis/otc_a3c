@@ -9,7 +9,7 @@ from src.perception.model_teacher import Teacher
 
 def lets_do_this(images_dir, model_dir, label):
     path = os.path.join(images_dir, label)
-    os.makedir(path)
+    os.makedirs(path)
 
     model = Teacher()
     sample_input = tf.convert_to_tensor(np.zeros_like(true_images[0]),dtype=np.uint8)[None,:]
