@@ -45,32 +45,22 @@ class ActorCriticModel(tf.keras.models.Model):
         # Build the fully connected layers for shared convolutional layers
         if conv_size is not None:
             conv_x = model_input
-            for i,(k,s,f) in enumerate(conv_size):
-                conv_x = tf.keras.layers.Conv2D(padding="same",
-                                                kernel_size=k,
-                                                strides=s,
-                                                filters=f,
-                                                activation="relu",
-                                                name="conv_{}".format(i))(conv_x)
-                #conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
-                conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
-                if max_pooling:
-                    conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
-            '''
-
-            # Quake 3 Deepmind style convolutions
-            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32)(conv_x)
-            conv_x = tf.keras.layers.Activation("relu")(conv_x)
-            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64)(conv_x)
-            conv_x = skip_1 = tf.keras.layers.Activation("relu")(conv_x)
-            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)(conv_x)
-            conv_x = skip_2 = tf.keras.layers.add([conv_x, skip_1])
-            conv_x = tf.keras.layers.Activation("relu")(conv_x)
-            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)(conv_x)
-            conv_x = tf.keras.layers.add([conv_x, skip_2])
-            conv_x = tf.keras.layers.Activation("relu")(conv_x)
-            '''
-
+            # If passed a topology a tuple, build the conv layers.
+            # Otherwise use hard-coded topologies
+            if isinstance(conv_size, tuple):
+                for i,(k,s,f) in enumerate(conv_size):
+                    conv_x = tf.keras.layers.Conv2D(padding="same",
+                                                    kernel_size=k,
+                                                    strides=s,
+                                                    filters=f,
+                                                    activation="relu",
+                                                    name="conv_{}".format(i))(conv_x)
+                    #conv_x = tf.keras.layers.BatchNormalization(name="batch_norm_{}".format(i))(conv_x)
+                    conv_x = tf.keras.layers.Activation("relu", name="conv_activation_{}".format(i))(conv_x)
+                    if max_pooling:
+                        conv_x = tf.keras.layers.MaxPooling2D((2, 2), padding='same')(conv_x)
+            elif conv_size=="quake":
+                conv_x = self.build_quake_conv(conv_x)
             flatten = tf.keras.layers.Flatten(name="Flatten")(conv_x)
             actor_x = flatten
             critic_x = tf.keras.layers.concatenate([flatten, critic_input])
@@ -99,6 +89,21 @@ class ActorCriticModel(tf.keras.models.Model):
         # Take a step with random input to build the model
         self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
                     np.random.random((max_floor + 1,)).astype(np.float32)]])
+
+    def build_quake_conv(self, conv_input):
+            # Quake 3 Deepmind style convolutions
+            # Like dopaine but with an additional 3x3 kernel, and skip connections
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32)(conv_input)
+            conv_x = tf.keras.layers.Activation("relu")(conv_x)
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64)(conv_x)
+            conv_x = skip_1 = tf.keras.layers.Activation("relu")(conv_x)
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)(conv_x)
+            conv_x = skip_2 = tf.keras.layers.add([conv_x, skip_1])
+            conv_x = tf.keras.layers.Activation("relu")(conv_x)
+            conv_x = tf.keras.layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)(conv_x)
+            conv_x = tf.keras.layers.add([conv_x, skip_2])
+            conv_x = tf.keras.layers.Activation("relu")(conv_x)
+            return (conv_x)
 
     def call(self, inputs):
         actor_logits, value = self.model(inputs)
