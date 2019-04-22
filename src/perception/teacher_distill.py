@@ -12,7 +12,7 @@ def lets_do_this(images_dir, model_dir, label):
     os.makedirs(path)
 
     model = Teacher()
-    sample_input = tf.convert_to_tensor(np.zeros_like(true_images[0]),dtype=np.uint8)[None,:]
+    sample_input = tf.convert_to_tensor(np.zeros((224,224,3)),dtype=np.uint8)[None,:]
     sample_output = model(sample_input)
     print('sample input shape {}'.format(sample_input.shape))
     print('sample output shape {}'.format(sample_output.shape))
