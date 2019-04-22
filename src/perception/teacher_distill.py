@@ -28,7 +28,7 @@ def lets_do_this(images_dir, model_dir, label):
         image = Image.open(os.path.join(images_dir, f))
         image_big = image.resize((224,224), Image.NEAREST)
 
-        confidence = tf.reshape(model([image_big]), (-1,)).numpy()[0]
+        confidence = tf.reshape(model(np.array([image_big])), (-1,)).numpy()[0]
 
         if confidence >= 0.9:
             image_name = os.path.join(path, '{}_{}_{:.2f}.png'.format(f, label, confidence))
