@@ -33,7 +33,7 @@ def lets_do_this(images_dir, model_dir, label):
         if confidence >= 0.9:
             image_name = os.path.join(path, '{}_{}_{:.2f}.png'.format(f, label, confidence))
             image.save(image_name)
-            print('Saved {}'.format(image_name))
+            print('\rSaved {}'.format(image_name))
             good += 1
         else:
             bad += 1
