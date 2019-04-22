@@ -31,7 +31,7 @@ def lets_do_this(images_dir, model_dir, label):
         confidence = tf.reshape(model([np.array(image_big)]), (-1,)).numpy()[0]
 
         if confidence >= 0.9:
-            image_name = os.path.join(path, '{}_{}_{:.2f}.png'.format(f, label, confidence))
+            image_name = os.path.join(path, '{}_{}_{:.2f}.png'.format(f.replace('.png',''), label, confidence))
             image.save(image_name)
             print('\rSaved {}'.format(image_name))
             good += 1
