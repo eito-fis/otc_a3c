@@ -23,9 +23,9 @@ def lets_do_this(images_dir, model_dir, label):
     good = 0
     bad = 0
     all = 0
-    for f in os.listdir(path):
+    for f in os.listdir(images_dir):
         if '.png' not in f: continue
-        image = Image.open(os.path.join(path, f))
+        image = Image.open(os.path.join(images_dir, f))
         image_big = image.resize((224,224), Image.NEAREST)
 
         confidence = tf.reshape(model([image_big]), (-1,)).numpy()[0]
