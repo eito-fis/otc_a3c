@@ -155,6 +155,7 @@ def lets_do_this(memory_dir, output_dir, model_dir, label):
         for i, memory in enumerate(memories):
             if label == 'all':
                 save_all(memory_name, memory, output_dir)
+                print('   #{}: {} images'.format(i+1,len(memory.obs)))
             else:
                 if model_dir is not None:
                     true_inds, false_inds = model_door(model, memory)
