@@ -23,23 +23,25 @@ def lets_do_this(images_dir, model_dir, label):
     good = 0
     bad = 0
     all = 0
-    for f in sorted(os.listdir(images_dir)):
+    files = sorted(os.listdir(images_dir))
+    for f in files:
         if '.png' not in f: continue
-        image = Image.open(os.path.join(images_dir, f))
+        image_path = os.path.join(images_dir, f)
+        image = Image.open(image_path)
         image_big = image.resize((224,224), Image.NEAREST)
 
         confidence = tf.reshape(model([np.array(image_big)]), (-1,)).numpy()[0]
 
         if confidence >= 0.9:
-            image_name = os.path.join(path, '{}_{}_{:.2f}.png'.format(f.replace('.png',''), label, confidence))
-            image.save(image_name)
-            print('\rSaved {}'.format(image_name))
+            new_image_path = os.path.join(path, f)
+            os.rename(image_path, new_image_path)
+            print('\r{} -> {}'.format(image_path, new_image_path))
             good += 1
         else:
             bad += 1
         all += 1
 
-        print('\r{} {:.2f}% good, {} {:.2f}% bad'.format(good, good*100./all, bad, bad*100./all), end='')
+        print('\r{}/{} {:.2f}%,  {} {:.2f}% good, {} {:.2f}% bad'.format(all, len(files), all*100./len(files), good, good*100./all, bad, bad*100./all), end='')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('use teacher model to select more images')
