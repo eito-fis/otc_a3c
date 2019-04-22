@@ -44,6 +44,7 @@ class PPOAgent():
                  actor_fc=None,
                  critic_fc=None,
                  conv_size=None,
+                 gae=True,
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
@@ -64,11 +65,14 @@ class PPOAgent():
             self.model.load_weights(restore_dir)
         
         # Build runner
-        self.runner = Runner(env=self.env,
-                             model=self.model,
-                             num_steps=num_steps)
-        self.runner = GAE_Runner(env=self.env,
-                                 model=self.model,
+        self.gae = gae
+        if self.gae:
+            self.runner = GAE_Runner(env=self.env,
+                                     model=self.model,
+                                     num_steps=num_steps)
+        else:
+            self.runner = Runner(env=self.env,
+                                model=self.model,
                                  num_steps=num_steps)
 
         # Build optimizer
@@ -132,7 +136,8 @@ class PPOAgent():
                                                           b_probs))
                     # Calculate advantages
                     advs = mb_rewards - mb_values
-                    #advs = (advs - advs.mean()) / (advs.std() + 1e-8)
+                    # Normalize if using GAE
+                    if self.gae: advs = (advs - advs.mean()) / (advs.std() + 1e-8)
 
                     # Calculate loss
                     with tf.GradientTape() as tape:
