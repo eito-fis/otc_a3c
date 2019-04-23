@@ -13,6 +13,7 @@ def worker(parent_remote, remote, env_fn_wrapper, idx):
     parent_remote.close()
     # Build environment at start
     env = env_fn_wrapper.x(idx)
+
     # Loop until environment is closed
     while True:
         # Recieve the command and any associated data

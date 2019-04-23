@@ -19,7 +19,7 @@ def main(args,
          value_discount=0.5,
          epsilon=0.1,
          num_steps=650,
-         num_envs=16,
+         num_envs=4,
          num_actions=4,
          stack_size=2,
          actor_fc=[1024,512],
@@ -45,6 +45,10 @@ def main(args,
     critic_fc: Critic model dense layers topology
     conv_size: Conv model topology
     '''
+
+    if args.wandb:
+        import wandb
+        wandb.init(project="obstacle-tower-challenge")
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
@@ -72,7 +76,8 @@ def main(args,
                      logging_period=logging_period,
                      checkpoint_period=checkpoint_period,
                      output_dir=args.output_dir,
-                     restore_dir=args.restore)
+                     restore_dir=args.restore,
+                     use_wandb=args.wandb)
     print("Agent built!")
 
     print("Strating train...")
@@ -86,7 +91,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='/tmp/a2c')
+        default='/tmp/ppo')
 
     # File path arguments
     parser.add_argument(
@@ -109,6 +114,10 @@ if __name__ == '__main__':
         action='store_true')
     parser.add_argument(
         '--mobilenet',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--wandb',
         default=False,
         action='store_true')
     args = parser.parse_args()
