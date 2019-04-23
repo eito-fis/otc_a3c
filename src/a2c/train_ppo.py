@@ -48,7 +48,25 @@ def main(args,
 
     if args.wandb:
         import wandb
-        wandb.init(project="obstacle-tower-challenge")
+        if args.wandb_name != None:
+            wandb.init(name=args.wandb_name,
+                       project="obstacle-tower-challenge",
+                       entity="42 Robolab")
+        else:
+            wandb.init(project="obstacle-tower-challenge",
+                       entity="42 Robolab")
+        wandb.config.update({"learning_rate": learning_rate,
+                             "entropy_discount": entropy_discount,
+                             "value_discount": value_discount,
+                             "epsilon": epsilon,
+                             "num_steps": num_steps,
+                             "num_envs": num_envs,
+                             "num_actions": num_actions,
+                             "stack_size": stack_size,
+                             "actor_fc": actor_fc,
+                             "critic_fc": critic_fc,
+                             "conv_size": conv_size})
+    else: wandb = None
 
     def env_func(idx):
         return WrappedObstacleTowerEnv(args.env_filename,
@@ -77,7 +95,7 @@ def main(args,
                      checkpoint_period=checkpoint_period,
                      output_dir=args.output_dir,
                      restore_dir=args.restore,
-                     use_wandb=args.wandb)
+                     wandb=wandb)
     print("Agent built!")
 
     print("Strating train...")
@@ -116,10 +134,16 @@ if __name__ == '__main__':
         '--mobilenet',
         default=False,
         action='store_true')
+
+    # WandB flags
     parser.add_argument(
         '--wandb',
         default=False,
         action='store_true')
+    parser.add_argument(
+        '--wandb-name',
+        type=str,
+        default=None)
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)

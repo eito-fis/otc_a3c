@@ -49,7 +49,7 @@ class PPOAgent():
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
                  restore_dir=None,
-                 use_wandb=False):
+                 wandb=None):
 
         # Build environment
         env_func_list = [env_func for _ in range(num_envs)]
@@ -109,11 +109,8 @@ class PPOAgent():
         self.summary_writer = tf.summary.create_file_writer(self.log_dir)
 
         # Setup wandb
-        if use_wandb:
-            import wandb
+        if wandb:
             self.wandb = wandb
-        else:
-            self.wandb = None
 
     def train(self):
         for i in range(self.train_steps):
@@ -245,7 +242,14 @@ class PPOAgent():
                 tf.summary.scalar("Value Loss", avg_value_loss, i)
                 tf.summary.scalar("Explained Variance", explained_variance, i)
                 tf.summary.scalar("Fraction Clipped", avg_clip_frac, i)
-            self.wandb.log({"epoch": i})
+            self.wandb.log({"epoch": i,
+                            "Average Floor": avg_floor,
+                            "Average Reward": avg_reward,
+                            "Policy Loss": avg_policy_loss,
+                            "Entropy Loss": avg_entropy_loss,
+                            "Value Loss": avg_value_loss,
+                            "Explained Variance": explained_variance,
+                            "Fraction Clipped": avg_clip_frac})
         # Periodically save checkoints
         if i % self.checkpoint_period == 0:
             model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
