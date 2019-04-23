@@ -167,7 +167,7 @@ class PPOAgent():
                                                                 clipped_policy_loss))
                         # Calculate our entropy loss
                         cce = tf.keras.losses.CategoricalCrossentropy()
-                        entropy_loss = cce(tf.stop_gradient(logits), logits) * -1
+                        entropy_loss = cce(logits, logits) * -1
                         # Calculate our value loss
                         mse = tf.keras.losses.MeanSquaredError()
                         value_loss = mse(mb_rewards[:, None], values)
@@ -199,8 +199,9 @@ class PPOAgent():
                 step_value_loss.append(np.mean(epoch_value_loss))
 
             # Log step data
-            self.log_step(b_rewards, b_values, step_policy_loss, step_entropy_loss,
-                          step_value_loss, epoch_clip_frac, ep_infos, i)
+            self.log_step(b_rewards, b_values, b_probs, step_policy_loss,
+                          step_entropy_loss, step_value_loss, epoch_clip_frac,
+                          ep_infos, i)
 
     def log_epoch(self, e, policy_loss, entropy_loss, value_loss, clip_frac):
         avg_policy_loss = np.mean(policy_loss)
@@ -211,7 +212,7 @@ class PPOAgent():
         print("\t\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
         print("\t\t| Fraction Clipped: {} |".format(avg_clip_frac))
 
-    def log_step(self, rewards, values, policy_loss, entropy_loss, value_loss, clip_frac, ep_infos, i):
+    def log_step(self, rewards, values, probs, policy_loss, entropy_loss, value_loss, clip_frac, ep_infos, i):
         # Pull specific info from info array and store in queue
         for info in ep_infos:
             self.floor_queue.append(info["floor"])
@@ -249,7 +250,8 @@ class PPOAgent():
                             "Entropy Loss": avg_entropy_loss,
                             "Value Loss": avg_value_loss,
                             "Explained Variance": explained_variance,
-                            "Fraction Clipped": avg_clip_frac})
+                            "Fraction Clipped": avg_clip_frac,
+                            "Probabilities": self.wandb.Histogram(probs)})
         # Periodically save checkoints
         if i % self.checkpoint_period == 0:
             model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
