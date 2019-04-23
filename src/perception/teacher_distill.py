@@ -10,7 +10,7 @@ from src.perception.model_teacher import Teacher
 def lets_do_this(images_dir, model_dir):
     labels = ['open_door', 'closed_door', 'inside_door', 'exit_door']
     paths = [os.path.join(images_dir, label) for label in labels]
-    for path in paths: os.makedirs(path)
+    for path in paths: os.makedirs(path, exist_ok=True)
 
     models = []
     for label in labels:
@@ -44,7 +44,7 @@ def lets_do_this(images_dir, model_dir):
 
         print('\r{}/{} {:.2f}%, {}'.format(
             all, len(files), all*100./len(files),
-            ', '.join(['{} {:.2f}% {}'.format(taken[i], taken[i]*100./len(files), labels[i]) for i in range(len(labels))])
+            ', '.join(['{} {:.2f}% {}'.format(taken[i], taken[i]*100./all, labels[i]) for i in range(len(labels))])
         ), end='')
 
 if __name__ == '__main__':
