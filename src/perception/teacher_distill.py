@@ -44,7 +44,6 @@ def lets_do_this(images_dir, model_dir):
 
         print('\r{}/{} {:.2f}%, {}'.format(
             all, len(files), all*100./len(files),
-            good, good*100./all, bad, bad*100./all,
             ', '.join(['{} {:.2f}% {}'.format(taken[i], taken[i]*100./len(files), labels[i]) for i in range(len(labels))])
         ), end='')
 
