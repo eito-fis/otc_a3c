@@ -246,12 +246,13 @@ class PPOAgent():
             self.wandb.log({"epoch": i,
                             "Average Floor": avg_floor,
                             "Average Reward": avg_reward,
+                            "Average Floor Distribution": self.wandb.Histogram(self.floor_queue, num_bins=25),
                             "Policy Loss": avg_policy_loss,
                             "Entropy Loss": avg_entropy_loss,
                             "Value Loss": avg_value_loss,
                             "Explained Variance": explained_variance,
                             "Fraction Clipped": avg_clip_frac,
-                            "Probabilities": self.wandb.Histogram(probs)})
+                            "Probabilities": self.wandb.Histogram(probs, num_bins=10)})
         # Periodically save checkoints
         if i % self.checkpoint_period == 0:
             model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
