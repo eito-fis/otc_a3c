@@ -17,9 +17,9 @@ THRESHOLD = 0
 
 IMAGE_SHAPE = (168, 168, 3)
 BLUR_COEFF = 20
-MASK_RADIUS = 85
+MASK_RADIUS = 55
 STRIDE = 8
-OFFSET = 10
+OFFSET = 0
 
 def superimpose(source_image, noise_image):
     new_image = np.copy(source_image)
@@ -86,11 +86,10 @@ def generate_saliency(model, image_module, source_image, prev_states, floor, mas
             critic_saliency = np.square(critic_logits - perturbed_critic_logits) / 2
             actor_saliency_map = actor_saliency_map + np.multiply(actor_saliency, mask)
             critic_saliency_map = critic_saliency_map + np.multiply(critic_saliency, mask)
-            # saliency_map[y,x] = saliency
     actor_saliency_map = cv2.normalize(actor_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
     critic_saliency_map = cv2.normalize(critic_saliency_map, None, 1, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-    rgb_saliency_map = np.zeros(IMAGE_SHAPE) + (actor_saliency_map[:,:,None] * [1,0,0]) + (critic_saliency_map[:,:,None] * [0,0,1])
-    return rgb_saliency_map
+    # rgb_saliency_map = np.zeros(IMAGE_SHAPE) + (actor_saliency_map[:,:,None] * [1,0,0]) + (critic_saliency_map[:,:,None] * [0,0,1])
+    return actor_saliency_map, critic_saliency_map
 
 masks = generate_masks((168,168), MASK_RADIUS, STRIDE)
 image_module = WrappedKerasLayer(retro=False, mobilenet=True)
@@ -138,7 +137,7 @@ if __name__ == '__main__':
     #COMMAND-LINE ARGUMENTS#
     parser = argparse.ArgumentParser(description='Render one memory.')
     parser.add_argument('--memory-path', required=True, help='path to saved memory object file')
-    parser.add_argument('--output', default='saliency/rgb/saliency_output/saliency_render.mp4', help='name of the video file')
+    parser.add_argument('--output-dir', default='saliency/rgb/saliency_output', help='name of the video file')
     parser.add_argument('--restore', type=str, default=None, help='path to saved model')
     args = parser.parse_args()
 
@@ -164,10 +163,10 @@ if __name__ == '__main__':
     height  = 720
 
     #INIT VIDEO#
-    output = args.output
-    os.makedirs(os.path.dirname(output), exist_ok=True)
+    output_path = os.path.join(args.output_dir, 'saliency_render.mp4')
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video = cv2.VideoWriter(output, fourcc, fps, (width,height))
+    video = cv2.VideoWriter(output_path, fourcc, fps, (width,height))
 
     NUM_ACTIONS = 4
     STATE_SHAPE = [1280]
@@ -176,7 +175,7 @@ if __name__ == '__main__':
     model = A3CModel(num_actions=NUM_ACTIONS,
                      state_size=STATE_SHAPE,
                      stack_size=STACK_SIZE,
-                     actor_fc=(1024, 512),
+                     actor_fc=(1024,512),
                      critic_fc=(1024,512))
     model.load_weights(args.restore)
 
@@ -184,13 +183,21 @@ if __name__ == '__main__':
     #RENDER VIDEO#
     print("Rendering...")
     for i, (obs, state, floor) in enumerate(frame_data):
-        state = states[i]
-        # prev_states = prev_states[1:] + [state]
+        # state = states[i]
+        prev_states = prev_states[1:] + [state]
         frame = np.zeros((height,width,3),dtype=np.uint8)
-        saliency_map = generate_saliency(model, image_module, obs, prev_states[:-1], floor, masks, BLUR_COEFF, STRIDE)
-        image = superimpose(obs.astype(np.float32), saliency_map.astype(np.float32))
-        cv2.imwrite('saliency/rgb/saliency_output/saliency_map_{}.png'.format(i), image)
-        draw_observation(frame,image)
+        actor_saliency_map, critic_saliency_map = generate_saliency(model, image_module, obs, prev_states[:-1], floor, masks, BLUR_COEFF, STRIDE)
+        actor_saliency_map = (np.zeros(IMAGE_SHAPE) + actor_saliency_map[:,:,None]) * [1,0,0]
+        critic_saliency_map = (np.zeros(IMAGE_SHAPE) + critic_saliency_map[:,:,None]) * [0,0,1]
+        rgb_saliency_map = actor_saliency_map + critic_saliency_map
+        actor_image = superimpose(obs.astype(np.float32), actor_saliency_map.astype(np.float32))
+        critic_image = superimpose(obs.astype(np.float32), critic_saliency_map.astype(np.float32))
+        rgb_image = superimpose(obs.astype(np.float32), rgb_saliency_map.astype(np.float32))
+        actor_image_path = os.path.join(args.output_dir, 'actor_saliency_{}.png'.format(i))
+        critic_image_path = os.path.join(args.output_dir, 'critic_saliency_{}.png'.format(i))
+        cv2.imwrite(actor_image_path, actor_image)
+        cv2.imwrite(critic_image_path, critic_image)
+        draw_observation(frame,rgb_image)
         cv2.putText(frame,'Step: {}'.format(i),(750,100),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255))
         # draw_distributions(frame, dist, dist_max)
 
