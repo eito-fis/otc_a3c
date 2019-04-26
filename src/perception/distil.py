@@ -32,7 +32,7 @@ def lets_do_this(images_dir, model_dir):
             new_image_path = os.path.join(paths[label_i], f)
             os.rename(image_path, new_image_path)
             print('\r{} -> {}'.format(image_path, new_image_path))
-            taken[i] += 1
+            taken[label_i] += 1
         all += 1
 
         print('\r{}/{} {:.2f}%, {}'.format(
