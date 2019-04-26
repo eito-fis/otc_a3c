@@ -9,7 +9,7 @@ class Student(tf.keras.Model):
             output_shape=[1280],
             trainable=False,
         )
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
+        self.dense1 = tf.keras.layers.Dense(64, activation='sigmoid')
         self.result = tf.keras.layers.Dense(6, activation='sigmoid')
 
     def call(self, data):
@@ -27,7 +27,7 @@ class StudentOwnConvs(tf.keras.Model):
         self.conv3 = tf.keras.layers.Conv2D(64, (3,3), (1,1), padding='same')
         self.conv4 = tf.keras.layers.Conv2D(64, (3,3), (1,1), padding='same')
         self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(256, activation='relu')
+        self.dense1 = tf.keras.layers.Dense(256, activation='sigmoid')
         self.result = tf.keras.layers.Dense(6, activation='sigmoid')
 
     def call(self, data):
