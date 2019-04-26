@@ -9,8 +9,8 @@ class Student(tf.keras.Model):
             output_shape=[1280],
             trainable=False,
         )
-        self.dense1 = tf.keras.layers.Dense(64, activation='sigmoid')
-        self.result = tf.keras.layers.Dense(6, activation='sigmoid')
+        self.dense1 = tf.keras.layers.Dense(32, activation='sigmoid')
+        self.result = tf.keras.layers.Dense(6, activation='softmax', use_bias=False)
 
     def call(self, data):
         data = tf.cast(data, tf.float32) / 255.
