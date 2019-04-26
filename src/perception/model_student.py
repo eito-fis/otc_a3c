@@ -10,7 +10,7 @@ class Student(tf.keras.Model):
             trainable=False,
         )
         self.dense1 = tf.keras.layers.Dense(128, activation='sigmoid')
-        self.dense3 = tf.keras.layers.Dense(32, activation='sigmoid')
+        self.dense2 = tf.keras.layers.Dense(32, activation='sigmoid')
         self.result = tf.keras.layers.Dense(6, activation='softmax')
 
     def call(self, data):
