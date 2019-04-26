@@ -10,6 +10,7 @@ from src.perception.model_student import Student
 def load_images(path):
     images = []
     for f in os.listdir(path):
+        if '.png' not in f: continue
         image = Image.open(os.path.join(path, f))
         image = image.resize((224,224), Image.NEAREST)
         images.append(np.array(image))
@@ -17,24 +18,27 @@ def load_images(path):
     print('{}: {} images with shape {}'.format(path, len(images), images.shape[1:]))
     return images
 
-def make_datasets(*all_images):
-    features = np.concatenate(all_images)
-    labels = []
-    for i, images in enumerate(all_images):
-        labels += [i]*len(images)
-    labels = np.array(labels)
-    labels = np.eye(len(all_images))[labels]
-    print('features shape {}'.format(features.shape))
-    print('labels shape {}'.format(labels.shape))
+def make_datasets(all_images, labels):
+    test_size = 20
+    train_datasets = []
+    test_features = []
+    test_labels = []
+    for i in range(len(labels)):
+        i_features = all_images[i]
+        i_permutation = np.random.permutation(len(i_features))
+        i_features = i_features[i_permutation]
 
-    train_features,test_features,train_labels,test_labels = train_test_split(features,labels,test_size=0.05)
-    print('train_features shape {}'.format(train_features.shape))
-    print('train_labels shape {}'.format(train_labels.shape))
-    print('test_features shape {}'.format(test_features.shape))
-    print('test_labels shape {}'.format(test_labels.shape))
+        i_labels = np.eye(len(labels))[[i]*len(i_features)]
 
-    train_dataset = tf.data.Dataset.from_tensor_slices((train_features,train_labels))
-    train_dataset = train_dataset.shuffle(100).repeat().batch(64)
+        test_features.extend(i_features[:test_size])
+        test_labels.extend(i_labels[:test_size])
+
+        i_train_dataset = tf.data.Dataset.from_tensor_slices((i_features[test_size:],i_labels[test_size:]))
+        i_train_dataset = i_train_dataset.shuffle(1000).repeat()
+        train_datasets.append(i_train_dataset)
+
+    train_dataset = tf.data.experimental.sample_from_datasets(train_datasets)
+    train_dataset = train_dataset.shuffle(1000).repeat().batch(64)
 
     test_dataset = tf.data.Dataset.from_tensor_slices((test_features,test_labels))
     test_dataset = test_dataset.batch(64)
@@ -44,19 +48,18 @@ def make_datasets(*all_images):
     return train_dataset, test_dataset
 
 def lets_do_this(images_dir, model_dir):
-    open_door_path = os.path.join(images_dir, 'open_door')
-    closed_door_path = os.path.join(images_dir, 'closed_door')
-    inside_door_path = os.path.join(images_dir, 'inside_door')
-    exit_door_path = os.path.join(images_dir, 'exit_door')
-    else_path = os.path.join(images_dir, 'else')
+    all_images = []
+    labels = []
+    for label in os.listdir(images_dir):
+        if 'door' not in label: continue
 
-    open_door_images = load_images(open_door_path)
-    closed_door_images = load_images(closed_door_path)
-    inside_door_images = load_images(inside_door_path)
-    exit_door_images = load_images(exit_door_path)
-    else_images = load_images(else_path)
+        path = os.path.join(images_dir, label)
+        images = load_images(path)
+        all_images.append(images)
+        labels.append(label)
+    print('Labels: {}'.format(', '.join(labels)))
 
-    train_dataset, test_dataset = make_datasets(open_door_images, closed_door_images, inside_door_images, exit_door_images, else_images)
+    train_dataset, test_dataset = make_datasets(all_images, labels)
 
     model = Student()
     model.compile(
@@ -64,7 +67,7 @@ def lets_do_this(images_dir, model_dir):
         loss='categorical_crossentropy',
         metrics=['accuracy'],
     )
-    sample_input = tf.convert_to_tensor(np.zeros_like(open_door_images[0]),dtype=np.uint8)[None,:]
+    sample_input = tf.convert_to_tensor(np.zeros_like(all_images[0][0]),dtype=np.uint8)[None,:]
     sample_output = model(sample_input)
     print('sample input shape {}'.format(sample_input.shape))
     print('sample output shape {}'.format(sample_output.shape))
