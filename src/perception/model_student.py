@@ -9,13 +9,15 @@ class Student(tf.keras.Model):
             output_shape=[1280],
             trainable=False,
         )
-        # self.dense1 = tf.keras.layers.Dense(32, activation='sigmoid')
+        self.dense1 = tf.keras.layers.Dense(128, activation='sigmoid')
+        self.dense3 = tf.keras.layers.Dense(32, activation='sigmoid')
         self.result = tf.keras.layers.Dense(6, activation='softmax')
 
     def call(self, data):
         data = tf.cast(data, tf.float32) / 255.
         data = self.conv(data)
-        # data = self.dense1(data)
+        data = self.dense1(data)
+        data = self.dense2(data)
         data = self.result(data)
         return data
 
