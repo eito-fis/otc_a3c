@@ -29,7 +29,7 @@ def closed_door(memory):
     return true_inds, false_inds
 
 def key(memory):
-    before_after = 10
+    before_after = 8
 
     true_inds = set()
     false_inds = set()
@@ -38,9 +38,9 @@ def key(memory):
 
     last_i = None
     for i in inds:
-        if memory.keys[i] == 1:
-            true_inds |= {j for j in range(i-before_after+1,i+1) if j in inds}
-            false_inds |= {j for j in range(i+1,i+before_after+1) if j in inds}
+        if memory.keys[i] == 1 and memory.keys[i-1] == 0:
+            true_inds |= {j for j in range(i-before_after,i) if j in inds}
+            false_inds |= {j for j in range(i,i+before_after) if j in inds}
 
     return true_inds, false_inds
 
