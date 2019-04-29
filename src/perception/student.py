@@ -51,8 +51,6 @@ def lets_do_this(images_dir, model_dir):
     all_images = []
     labels = []
     for label in os.listdir(images_dir):
-        if 'door' not in label: continue
-
         path = os.path.join(images_dir, label)
         images = load_images(path)
         all_images.append(images)
