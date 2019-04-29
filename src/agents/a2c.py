@@ -78,7 +78,7 @@ class A2CAgent:
             optimizer=keras.optimizers.RMSprop(lr=0.0007),
             loss=[self._logits_loss, self._value_loss]
         )
-    
+
     def train(self, n_epochs=10000):
         episode_rewards = []
         for epoch in range(n_epochs):
@@ -88,7 +88,7 @@ class A2CAgent:
             dones = []
             values = []
             observations = []
-            
+
             logging.info("Episode generation started...")
             while len(dones) == 0 or dones[-1] != 1:
                 observations.append(obs)
@@ -131,7 +131,7 @@ class A2CAgent:
         # advantages are returns - baseline, value estimates in our case
         advantages = returns - np.array(values)
         return returns, advantages
-    
+
     def _value_loss(self, returns, value):
         return self.value * keras.losses.mean_squared_error(returns, value)
 

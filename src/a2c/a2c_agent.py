@@ -54,7 +54,7 @@ class A2CAgent():
                                       conv_size=conv_size)
         if restore_dir != None:
             self.model.load_weights(restore_dir)
-        
+
         # Build runner
         self.runner = Runner(env=self.env,
                              model=self.model,
@@ -74,7 +74,7 @@ class A2CAgent():
         self.logging_period = logging_period
         self.checkpoint_period = checkpoint_period
         self.episodes = 0
-        
+
         # Build logging directories
         self.log_dir = os.path.join(output_dir, "logs/")
         os.makedirs(os.path.dirname(self.log_dir), exist_ok=True)
@@ -90,7 +90,7 @@ class A2CAgent():
             b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.run()
             # Calculate advantages
             advs = b_rewards - b_values
-            
+
             # Calculate loss
             with tf.GradientTape() as tape:
                 # Get actions probabilities and values for all states
@@ -129,12 +129,12 @@ class A2CAgent():
             self.floor_queue.append(info["floor"])
             self.reward_queue.append(info["total_reward"])
             self.episodes += 1
-        
+
         avg_floor = 0 if len(self.floor_queue) == 0 else sum(self.floor_queue) / len(self.floor_queue)
         avg_reward = 0 if len(self.reward_queue) == 0 else sum(self.reward_queue) / len(self.reward_queue)
         explained_variance = self.explained_variance(values, rewards)
 
-        print("| Iteration: {} |".format(i)) 
+        print("| Iteration: {} |".format(i))
         print("| Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("| Entropy Loss: {} | Policy Loss: {} | Value Loss: {} |".format(entropy_loss, policy_loss, value_loss))
         print("| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, np.var(rewards)))
@@ -198,4 +198,3 @@ if __name__ == '__main__':
     print("Starting train...")
     agent.train()
     print("Train done!")
-    
