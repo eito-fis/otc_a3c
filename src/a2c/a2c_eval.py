@@ -3,8 +3,8 @@ import gin
 import logging
 import argparse
 
-from src.a2c.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
-from src.a2c.actor_critic_model import ActorCriticModel
+from src.a2c.envs.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
+from src.a2c.models.actor_critic_model import ActorCriticModel
 
 import gym
 import pickle

@@ -4,8 +4,8 @@ import gin
 import logging
 import argparse
 
-from src.a2c.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
-from src.a2c.ppo_agent import PPOAgent
+from src.a2c.envs.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
+from src.a2c.agents.ppo_agent import PPOAgent
 
 import numpy as np
 import tensorflow as tf

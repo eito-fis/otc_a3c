@@ -6,10 +6,10 @@ from collections import deque
 import numpy as np
 import tensorflow as tf
 
-from src.a2c.parallel_env import ParallelEnv
-from src.a2c.actor_critic_model import ActorCriticModel
-from src.a2c.runner import Runner
-from src.a2c.gae_runner import GAE_Runner
+from src.a2c.envs.parallel_env import ParallelEnv
+from src.a2c.models.actor_critic_model import ActorCriticModel
+from src.a2c.runners.runner import Runner
+from src.a2c.runners.gae_runner import GAE_Runner
 
 class PPOAgent():
     '''
