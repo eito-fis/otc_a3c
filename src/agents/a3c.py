@@ -48,7 +48,8 @@ class Memory:
         self.obs = []
         self.probs = []
         self.values = []
-        self.novelty = []
+        self.key = []
+        self.time = []
 
     def store(self, state, action, reward):
         self.states.append(state)
@@ -61,7 +62,8 @@ class Memory:
         self.rewards = []
         self.obs=[]
         self.probs = []
-        self.novelty = []
+        self.key = []
+        self.time = []
 
 class ProbabilityDistribution(keras.Model):
     def call(self, logits):

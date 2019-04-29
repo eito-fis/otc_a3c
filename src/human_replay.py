@@ -23,7 +23,7 @@ def input_action():    # 0    1    2    3    4    5    6    7    8    9
 
 def run(env, save_obs):
     mem = Memory()
-    current_state, observation = env.reset()
+    current_state, observation, key, time = env.reset()
     mem.clear()
 
     done = False
@@ -36,11 +36,17 @@ def run(env, save_obs):
             print("Custom action {} stored!".format(action))
             if save_obs: mem.obs.append(observation)
             continue
-        (new_state, reward, done, _), new_observation = env.step(action)
+        (new_state, reward, done, _), new_observation, new_key, new_time = env.step(action)
         mem.store(current_state, action, reward)
-        if save_obs: mem.obs.append(observation)
+        if save_obs:
+            mem.obs.append(observation)
+            mem.key.append(key)
+            mem.time.append(time)
         current_state = new_state
         observation = new_observation
+        key = new_key
+        time = new_time
+
 
     return mem
 
@@ -171,6 +177,8 @@ if __name__ == '__main__':
             mem = run(env, args.save_obs)
             memory_buffer.append(mem)
             if episode % period == 0:
+                print(mem.key)
+                print(mem.time)
                 output_file = open(output_filepath, 'wb+')
                 pickle.dump(memory_buffer, output_file)
                 print("Finished episode {}. Memory buffer saved.".format(episode))

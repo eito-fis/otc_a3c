@@ -146,12 +146,13 @@ class WrappedObstacleTowerEnv():
         return np.array(obs_image)
 
     def reset(self):
-        observation = self._obstacle_tower_env.reset()[0]
+        observation = self._obstacle_tower_env.reset()
+        observation, key, time = observation
         self._done = False
         if self.mobilenet:
             if self.autoencoder:
                 observation = self.autoencoder.predict(observation[None,:])[0]
-            return self.image_module(self._preprocess_observation(observation)), observation
+            return self.image_module(self._preprocess_observation(observation)), observation, key, time
         elif self.gray_scale:
             gray_observation = self.gray_process_observation(observation)
             if self.autoencoder:
@@ -181,13 +182,13 @@ class WrappedObstacleTowerEnv():
 
 
         observation, reward, done, info = self._obstacle_tower_env.step(action)
-        observation = observation[0]
+        observation, key, time = observation
         self._done = done
 
         if self.mobilenet:
             if self.autoencoder:
                 observation = self.autoencoder.predict(observation[None,:])[0]
-            return (self.image_module(self._preprocess_observation(observation)), reward, done, info), observation
+            return (self.image_module(self._preprocess_observation(observation)), reward, done, info), observation, key, time
         elif self.gray_scale:
             gray_observation = self.gray_process_observation(observation)
             if self.autoencoder:

@@ -211,7 +211,7 @@ class Worker(threading.Thread):
             self.env._obstacle_tower_env.seed(seed)
             floor = np.random.randint(0, self.max_floor)
             self.env.floor(floor)
-            state, obs = self.env.reset()
+            state, obs, key, time = self.env.reset()
             rolling_average_state = state
             mem.clear()
             current_episode = Worker.global_episode
@@ -243,12 +243,14 @@ class Worker(threading.Thread):
                     probs = tf.nn.softmax(probs).numpy()
                     action = np.argmax(probs[0])
 
-                (new_state, reward, done, _), new_obs = self.env.step(action)
+                (new_state, reward, done, _), new_obs, new_key, new_time = self.env.step(action)
 
                 total_reward += reward
                 mem.store(state, action, reward)
                 mem.probs.append(probs)
                 mem.obs.append(obs)
+                mem.key.append(key)
+                mem.time.append(time)
                 if reward == 1:
                     passed = True
                     break
@@ -257,18 +259,22 @@ class Worker(threading.Thread):
                 state = new_state
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
+                key = new_key
+                time = new_time
             print("Episode {} | Seed {} | Floor {} | Reward {}".format(current_episode, seed, floor, total_reward))
             if passed:
                 self.result_queue.put((seed,floor,0))
             else:
                 if self.memory_path is not None:
+                    print(mem.key)
+                    print(mem.time)
                     output_filepath = os.path.join(self.memory_path, "_worker{}_episode{}".format(self.worker_idx, current_episode))
                     os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
                     print("Saving memory to output file path {}".format(output_filepath))
                     output_file = open(output_filepath, 'wb+')
                     pickle.dump(mem, output_file)
                 self.result_queue.put((seed,floor,1))
-            
+
             Worker.global_episode += 1
 
         self.result_queue.put(None)
