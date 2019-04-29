@@ -28,6 +28,22 @@ def closed_door(memory):
     false_inds = random.sample(maybe_false_inds - true_inds, len(true_inds))
     return true_inds, false_inds
 
+def key(memory):
+    before_after = 10
+
+    true_inds = set()
+    false_inds = set()
+    inds = set(range(len(memory.rewards)))
+    maybe_false_inds = set(inds)
+
+    last_i = None
+    for i in inds:
+        if memory.keys[i] == 1:
+            true_inds |= {j for j in range(i-before_after+1,i+1) if j in inds}
+            false_inds |= {j for j in range(i+1,i+before_after+1) if j in inds}
+
+    return true_inds, false_inds
+
 def open_door(memory):
     k = 1
     between_doors = 10
@@ -135,6 +151,10 @@ def lets_do_this(memory_dir, output_dir, label):
                 true_inds, false_inds = exit_door(memory)
                 save(true_inds, false_inds, memory_name, memory, true_path, false_path)
                 print('   #{}: {} true, {} false'.format(i+1,len(true_inds),len(false_inds)))
+            elif label == 'key':
+                true_inds, false_inds = key(memory)
+                save(true_inds, false_inds, memory_name, memory, true_path, false_path)
+                print('   #{}: {} true, {} false'.format(i+1,len(true_inds),len(false_inds)))
             else:
                 raise Exception('Unknown label "{}"'.format(label))
 
@@ -143,7 +163,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('exract images based on some criteria')
     parser.add_argument('--memory-dir', type=str, required=True, help='directory with memory files')
     parser.add_argument('--output-dir', type=str, required=True, help='directory with extracted images')
-    parser.add_argument('--label', type=str, required=True, choices=['closed_door', 'open_door', 'inside_door', 'exit_door'], help='criteria for the images')
+    parser.add_argument('--label', type=str, required=True, choices=['closed_door', 'open_door', 'inside_door', 'exit_door', 'key'], help='criteria for the images')
     args = parser.parse_args()
 
     memory_dir = args.memory_dir
