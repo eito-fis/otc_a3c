@@ -194,7 +194,7 @@ class Worker(threading.Thread):
         while Worker.global_episode < self.max_episodes:
             floor = np.random.randint(0, self.max_floor)
             self.env.floor(floor)
-            state, obs = self.env.reset()
+            state, obs, key, time = self.env.reset()
             rolling_average_state = state
             mem.clear()
             current_episode = Worker.global_episode
@@ -217,12 +217,14 @@ class Worker(threading.Thread):
                     # action = np.squeeze(tf.nn.softmax(logits).numpy())
                     # action = np.argmax(action)
 
-                (new_state, reward, done, _), new_obs = self.env.step(action)
+                (new_state, reward, done, _), new_obs, new_key, new_time = self.env.step(action)
 
                 total_reward += reward
                 mem.store(state, action, reward, floor)
                 if self.memory_path:
                     mem.obs.append(obs)
+                    mem.keys.append(key)
+                    mem.times.append(time)
                 if reward > .95:
                     passed = True
                     break
@@ -231,9 +233,13 @@ class Worker(threading.Thread):
                 state = new_state
                 rolling_average_state = rolling_average_state * 0.8 + new_state * 0.2
                 obs = new_obs
+                key = new_key
+                time = new_time
             print("Episode {} | Floor {} | Reward {}".format(current_episode, floor, total_reward))
             if self.memory_path:
-                if passed: 
+                print(mem.keys)
+                print(mem.times)
+                if passed:
                     output_filepath = os.path.join(self.memory_path, "pass_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
                 else:
                     output_filepath = os.path.join(self.memory_path, "fail_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))

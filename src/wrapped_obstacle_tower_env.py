@@ -91,7 +91,8 @@ class WrappedObstacleTowerEnv():
         self._done = False
         if self.mobilenet:
             mobile_observation = self._preprocess_observation(observation)
-            return self.image_module(mobile_observation), observation[0]
+            observation, key, time = observation
+            return self.image_module(mobile_observation), observation, key, time
         elif self.gray_scale:
             return self.gray_process_observation(observation), observation[0]
         else:
@@ -121,7 +122,8 @@ class WrappedObstacleTowerEnv():
 
         if self.mobilenet:
             mobile_observation = self._preprocess_observation(observation)
-            return (self.image_module(mobile_observation), reward, done, info), observation[0]
+            observation, key, time = observation
+            return (self.image_module(mobile_observation), reward, done, info), observation, key, time
         elif self.gray_scale:
             return (self.gray_process_observation(observation), reward, done, info), observation[0]
         else:

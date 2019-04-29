@@ -14,6 +14,8 @@ class Memory:
         self.rewards = []
         self.obs = []
         self.floors = []
+        self.keys = []
+        self.times = []
 
     def store(self, state, action, reward, floor):
         # Save state - action - reward pairs
@@ -29,6 +31,8 @@ class Memory:
         self.rewards = []
         self.obs=[]
         self.floors = []
+        self.keys = []
+        self.times = []
 
 class ActorCriticModel(tf.keras.Model):
     '''
