@@ -33,7 +33,7 @@ class WrappedObstacleTowerEnv():
         environment_filename=None,
         docker_training=False,
         worker_id=0,
-        retro=True,
+        retro=False,
         timeout_wait=30,
         realtime_mode=False,
         num_actions=3,
@@ -107,7 +107,8 @@ class WrappedObstacleTowerEnv():
 
     def reset(self):
         # Reset env, stack and floor
-        state = self._obstacle_tower_env.reset()
+        # (We save state as an attribute so child objects can access it)
+        self.state = self._obstacle_tower_env.reset()
         self.current_floor = self.start_floor
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
@@ -115,9 +116,9 @@ class WrappedObstacleTowerEnv():
 
         # Preprocess current obs and add to stack
         if self.retro:
-            observation = (state / 255).astype(np.float32)
+            observation = (self.state / 255).astype(np.float32)
         else:
-            observation, key, time = state
+            observation, key, time = self.state
 
         if self.mobilenet:
             observation = self.mobile_preprocess_observation(observation)
@@ -128,15 +129,18 @@ class WrappedObstacleTowerEnv():
 
         # Build our state (MUST BE A TUPLE)
         one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
-        if self.retro is False:
-            continuous_data = np.array([self.current_reward, key, time])
-        else:
-            continuous_data = np.array([self.current_reward])
-        total_data = np.concatenate(one_hot_floor, self.continuous_data).astype(np.float32)
+        floor_data = np.append(one_hot_floor, self.current_reward).astype(np.float32)
         stacked_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
-        ret_state = (stacked_state, total_data)
+        if self.retro is True:
+            ret_state = (stacked_state, floor_data)
+        else:
+            key_time_data = np.array([key, time]).astype(np.float32)
+            ret_state = (stacked_state, floor_data, key_time_data)
 
-        return ret_state
+        # Empty info dict for any children to add to
+        info = {}
+
+        return ret_state, info
 
     def step(self, action):
         # Convert int action to vector required by the env
@@ -161,7 +165,8 @@ class WrappedObstacleTowerEnv():
 
 
         # Take the step and record data
-        state, reward, done, info = self._obstacle_tower_env.step(action)
+        # (We save state as an attribute so child objects can access it)
+        self.state, reward, done, info = self._obstacle_tower_env.step(action)
 
         # Keep track of current floor reward and total reward
         if reward >= 0.95:
@@ -174,13 +179,13 @@ class WrappedObstacleTowerEnv():
         if done:
             # Save info and reset when an episode ends
             info["episode_info"] = {"floor": self.current_floor, "total_reward": self.total_reward}
-            ret_state = self.reset()
+            ret_state, _ = self.reset()
         else:
             # Preprocess current obs and add to stack
             if self.retro:
-                observation = (state / 255).astype(np.float32)
+                observation = (self.state / 255).astype(np.float32)
             else:
-                observation, key, time = state
+                observation, key, time = self.state
 
             if self.mobilenet:
                 observation = self.mobile_preprocess_observation(observation)
@@ -191,13 +196,13 @@ class WrappedObstacleTowerEnv():
 
             # Build our state (MUST BE A TUPLE)
             one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
-            if self.retro is False:
-                continuous_data = np.array([self.current_reward, key, time])
-            else:
-                continuous_data = np.array([self.current_reward])
-            total_data = np.concatenate(one_hot_floor, self.continuous_data).astype(np.float32)
+            floor_data = np.append(one_hot_floor, self.current_reward).astype(np.float32)
             stacked_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
-            ret_state = (stacked_state, total_data)
+            if self.retro is True:
+                ret_state = (stacked_state, floor_data)
+            else:
+                key_time_data = np.array([key, time]).astype(np.float32)
+                ret_state = (stacked_state, floor_data, key_time_data)
 
         return ret_state, reward, done, info
 

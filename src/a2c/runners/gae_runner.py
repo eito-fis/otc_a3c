@@ -1,8 +1,9 @@
 
 import numpy as np
 from tqdm import tqdm
+from src.a2c.runners.runner import Runner
 
-class GAE_Runner():
+class GAE_Runner(Runner):
     def __init__(self,
                  env=None,
                  model=None,
@@ -16,15 +17,13 @@ class GAE_Runner():
         num_steps: The number of steps to run for each environment
         gamma: Discount factor
         """
-        self.env = env
-        self.model = model
-        self.num_steps = num_steps
-        self.gamma = gamma
+        super().__init__(env=env,
+                         model=model,
+                         num_steps=num_steps,
+                         gamma=0.99)
         self.lam = lam
-        self.states  = self.env.reset()
-        self.dones = np.zeros(self.env.num_envs)
 
-    def run(self):
+    def generate_batch(self):
         """
         Run a learning step of the model
         returns:
@@ -35,30 +34,7 @@ class GAE_Runner():
             - infos
         """
         # Init lists
-        b_states, b_rewards, b_actions, b_values, b_dones, b_probs = [], [], [], [], [], []
-        ep_infos = []
-
-        # Rollout on each env for num_steps
-        for _ in tqdm(range(self.num_steps), "Rollout"):
-            # Generate actions, values, and probabilities of the actions sampled
-            actions, values, probs = self.model.step(self.states)
-
-            b_states.append(self.states)
-            b_actions.append(actions)
-            b_values.append(values)
-            b_probs.append(probs)
-            b_dones.append(self.dones)
-
-            # Take actions
-            self.states, rewards, self.dones, infos = self.env.step(actions)
-
-            b_rewards.append(rewards)
-
-            # Check if any episode finished, and save the metrics if one did
-            for info in infos:
-                ep_info = info.get("episode_info")
-                if ep_info is not None:
-                    ep_infos.append(ep_info)
+        b_states, b_rewards, b_dones, b_actions, b_values, b_probs, ep_infos = self.rollout()
 
         # Convert to numpy array and change shape from (num_steps, n_envs) to (n_envs, num_steps)
         b_states = np.asarray(b_states, dtype=self.states.dtype)

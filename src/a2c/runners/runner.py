@@ -19,12 +19,12 @@ class Runner():
         self.model = model
         self.num_steps = num_steps
         self.gamma = gamma
-        self.states  = self.env.reset()
+        self.states, self.infos  = self.env.reset()
         self.dones = np.zeros(self.env.num_envs)
 
-    def run(self):
+    def generate_batch(self):
         """
-        Run a learning step of the model
+        Generates a batch
         returns:
             - observations
             - rewards
@@ -32,31 +32,8 @@ class Runner():
             - values
             - infos
         """
-        # Init lists
-        b_states, b_rewards, b_actions, b_values, b_dones, b_probs = [], [], [], [], [], []
-        ep_infos = []
 
-        # Rollout on each env for num_steps
-        for _ in tqdm(range(self.num_steps), "Rollout"):
-            # Generate actions, values, and probabilities of the actions sampled
-            actions, values, probs = self.model.step(self.states)
-
-            b_states.append(self.states)
-            b_actions.append(actions)
-            b_values.append(values)
-            b_probs.append(probs)
-            b_dones.append(self.dones)
-
-            # Take actions
-            self.states, rewards, self.dones, infos = self.env.step(actions)
-
-            b_rewards.append(rewards)
-
-            # Check if any episode finished, and save the metrics if one did
-            for info in infos:
-                ep_info = info.get("episode_info")
-                if ep_info is not None:
-                    ep_infos.append(ep_info)
+        b_states, b_rewards, b_dones, b_actions, b_values, b_probs, ep_infos = self.rollout()
         b_dones.append(self.dones)
 
         # Convert to numpy array and change shape from (num_steps, n_envs) to (n_envs, num_steps)
@@ -85,6 +62,35 @@ class Runner():
             map(self.flatten, (b_states, b_rewards, b_dones, b_actions,
                                b_values, b_probs, true_rewards))
         return b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_rewards, ep_infos
+
+    def rollout(self):
+        # Init lists
+        b_states, b_rewards, b_actions, b_values, b_dones, b_probs = [], [], [], [], [], []
+        ep_infos = []
+
+        # Rollout on each env for num_steps
+        for _ in tqdm(range(self.num_steps), "Rollout"):
+            # Generate actions, values, and probabilities of the actions sampled
+            actions, values, probs = self.model.step(self.states)
+
+            b_states.append(self.states)
+            b_actions.append(actions)
+            b_values.append(values)
+            b_probs.append(probs)
+            b_dones.append(self.dones)
+
+            # Take actions
+            self.states, rewards, self.dones, self.infos = self.env.step(actions)
+
+            b_rewards.append(rewards)
+
+            # Check if any episode finished, and save the metrics if one did
+            for info in self.infos:
+                ep_info = info.get("episode_info")
+                if ep_info is not None:
+                    ep_infos.append(ep_info)
+
+        return b_states, b_rewards, b_dones, b_actions, b_values, b_probs, ep_infos
 
     def discount(self, rewards, dones, gamma):
         """

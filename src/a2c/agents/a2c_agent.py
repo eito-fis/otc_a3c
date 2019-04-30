@@ -87,7 +87,7 @@ class A2CAgent():
     def train(self):
         for i in range(self.train_steps):
             # Generate a batch from one rollout
-            b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.run()
+            b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.generate_batch()
             # Calculate advantages
             advs = b_rewards - b_values
 

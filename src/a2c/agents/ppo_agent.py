@@ -44,7 +44,8 @@ class PPOAgent():
                  actor_fc=None,
                  critic_fc=None,
                  conv_size=None,
-                 gae=True,
+                 gae=False,
+                 retro=False,
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
@@ -61,7 +62,8 @@ class PPOAgent():
                                       stack_size=self.env.stack_size,
                                       actor_fc=actor_fc,
                                       critic_fc=critic_fc,
-                                      conv_size=conv_size)
+                                      conv_size=conv_size,
+                                      retro=retro)
         if restore_dir != None:
             self.model.load_weights(restore_dir)
         
@@ -111,6 +113,8 @@ class PPOAgent():
         # Setup wandb
         if wandb:
             self.wandb = wandb
+        else:
+            self.wandb = None
 
     def train(self):
         for i in range(self.train_steps):
@@ -121,7 +125,7 @@ class PPOAgent():
             # Generate indicies for minibatch sampling
             indicies = np.arange(self.b_size)
             # Generate a batch from one rollout
-            b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.run()
+            b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.generate_batch()
             
             # PPO Updates!
             print("\nStarting PPO updates...")
@@ -243,16 +247,17 @@ class PPOAgent():
                 tf.summary.scalar("Value Loss", avg_value_loss, i)
                 tf.summary.scalar("Explained Variance", explained_variance, i)
                 tf.summary.scalar("Fraction Clipped", avg_clip_frac, i)
-            self.wandb.log({"epoch": i,
-                            "Average Floor": avg_floor,
-                            "Average Reward": avg_reward,
-                            "Average Floor Distribution": self.wandb.Histogram(self.floor_queue, num_bins=25),
-                            "Policy Loss": avg_policy_loss,
-                            "Entropy Loss": avg_entropy_loss,
-                            "Value Loss": avg_value_loss,
-                            "Explained Variance": explained_variance,
-                            "Fraction Clipped": avg_clip_frac,
-                            "Probabilities": self.wandb.Histogram(probs, num_bins=10)})
+            if self.wandb != None:
+                self.wandb.log({"epoch": i,
+                                "Average Floor": avg_floor,
+                                "Average Reward": avg_reward,
+                                "Average Floor Distribution": self.wandb.Histogram(self.floor_queue, num_bins=25),
+                                "Policy Loss": avg_policy_loss,
+                                "Entropy Loss": avg_entropy_loss,
+                                "Value Loss": avg_value_loss,
+                                "Explained Variance": explained_variance,
+                                "Fraction Clipped": avg_clip_frac,
+                                "Probabilities": self.wandb.Histogram(probs, num_bins=10)})
         # Periodically save checkoints
         if i % self.checkpoint_period == 0:
             model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
