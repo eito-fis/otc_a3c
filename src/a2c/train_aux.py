@@ -4,8 +4,8 @@ import gin
 import logging
 import argparse
 
-from src.a2c.envs.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
-from src.a2c.agents.ppo_agent import PPOAgent
+from src.a2c.envs.aux_env import AuxEnv
+from src.a2c.agents.aux_agent import AuxAgent
 
 import numpy as np
 import tensorflow as tf
@@ -19,8 +19,9 @@ def main(args,
          value_discount=0.5,
          epsilon=0.1,
          num_steps=650,
-         num_envs=16,
+         num_envs=4,
          num_actions=4,
+         num_aux=9,
          stack_size=2,
          actor_fc=[512],
          critic_fc=[512],
@@ -71,16 +72,18 @@ def main(args,
     else: wandb = None
 
     def env_func(idx):
-        return WrappedObstacleTowerEnv(args.env_filename,
-                                       stack_size=stack_size,
-                                       worker_id=idx,
-                                       mobilenet=args.mobilenet,
-                                       gray_scale=args.gray,
-                                       realtime_mode=args.render,
-                                       retro=args.retro)
+        return AuxEnv(args.env_filename,
+                      stack_size=stack_size,
+                      worker_id=idx,
+                      mobilenet=args.mobilenet,
+                      gray_scale=args.gray,
+                      realtime_mode=args.render,
+                      retro=args.retro,
+                      num_aux=num_aux,
+                      aux_dir=args.aux_dir)
 
     print("Building agent...")
-    agent = PPOAgent(train_steps=train_steps,
+    agent = AuxAgent(train_steps=train_steps,
                      update_epochs=update_epochs,
                      num_minibatches=num_minibatches,
                      learning_rate=learning_rate,
@@ -96,6 +99,7 @@ def main(args,
                      conv_size=conv_size,
                      gae=args.gae,
                      retro=args.retro,
+                     num_aux=num_aux,
                      logging_period=logging_period,
                      checkpoint_period=checkpoint_period,
                      output_dir=args.output_dir,
@@ -115,6 +119,10 @@ if __name__ == '__main__':
         '--output-dir',
         type=str,
         default='/tmp/ppo')
+    parser.add_argument(
+        '--aux-dir',
+        type=str,
+        default='models/aux_model')
 
     # File path arguments
     parser.add_argument(
