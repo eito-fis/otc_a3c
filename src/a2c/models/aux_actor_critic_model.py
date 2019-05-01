@@ -3,7 +3,9 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 
-class ActorCriticModel(tf.keras.models.Model):
+from src.a2c.models.actor_critic_model import ActorCriticModel
+
+class AuxActorCriticModel(ActorCriticModel):
     '''
     Actor Critic Model
     - Contains both our actor and critic model seperately
@@ -21,44 +23,33 @@ class ActorCriticModel(tf.keras.models.Model):
                convolutional layer.
         ex: ((8, 4, 16)) would make 1 convolution layer with an 8x8 kernel, (4, 4) stride
             and 16 filters
+    max_pooling: Whether or not to throw max pooling layers after convolutional layers.
+                 Currently only does (2,2) pooling.
     '''
     def __init__(self,
                  num_actions=None,
+                 num_aux=9,
                  state_size=None,
                  max_floor=25,
                  stack_size=None,
                  actor_fc=None,
                  critic_fc=None,
                  conv_size=None,
-                 retro=True,
+                 retro=False,
                  build=True):
-        super().__init__()
-        self.num_actions = num_actions
-        self.retro = retro
+        super().__init__(num_actions=num_actions,
+                         state_size=state_size,
+                         max_floor=max_floor,
+                         stack_size=stack_size,
+                         actor_fc=actor_fc,
+                         critic_fc=critic_fc,
+                         conv_size=conv_size,
+                         retro=retro,
+                         build=False)
 
-        # Multiply the final dimension of the state by stack_size to get correct input_size
-        self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
+        self.aux = layers.Dense(num_aux, name="aux", activation="softmax")
 
-        # Build convolutional layers
-        if conv_size is not None:
-            if isinstance(conv_size, tuple):
-                self.convs = Custom_Convs(conv_size)
-            elif conv_size == "quake":
-                self.convs = Quake_Block()
-            else:
-                raise ValueError("Invalid CNN Topology")
-        else: self.convs = None
-        self.flatten = layers.Flatten()
-        
-        # Build the fully connected layers for the actor and critic models
-        self.actor_fc = [layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i)) for i,(neurons) in enumerate(actor_fc)]
-        self.critic_fc = [layers.Dense(neurons, activation="relu", name="critic_dense_{}".format(i)) for i,(neurons) in enumerate(critic_fc)]
-
-        # Build the output layers for the actor and critic models
-        self.actor_logits = layers.Dense(num_actions, name='policy_logits')
-        self.value = layers.Dense(1, name='value')
-
-        # Build the final total model
+        # Take a step with random input to build the model
         if build and retro:
             self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
                         np.random.random((max_floor + 1,)).astype(np.float32)]])
@@ -76,7 +67,8 @@ class ActorCriticModel(tf.keras.models.Model):
         # Run convs on conv input
         if self.convs is not None:
             conv_out = self.convs(conv_input)
-            shared_dense = self.flatten(conv_out)
+            conv_out = self.flatten(conv_out)
+            shared_dense = conv_out
         else:
             shared_dense = conv_input
 
@@ -96,13 +88,16 @@ class ActorCriticModel(tf.keras.models.Model):
             critic_dense = l(critic_dense)
         value = self.value(critic_dense)
 
-        return actor_logits, value
+        # Run aux layers
+        aux = self.aux(conv_out)
+
+        return actor_logits, value, aux
 
     def step(self, inputs):
         inputs = self.process_inputs(inputs)
 
         # Make predictions on input
-        logits, values = self.predict(inputs)
+        logits, values, _ = self.predict(inputs)
         probs = tf.nn.softmax(logits)
 
         # Sample from probability distributions
@@ -120,7 +115,7 @@ class ActorCriticModel(tf.keras.models.Model):
     def get_values(self, inputs):
         inputs = self.process_inputs(inputs)
 
-        _, values = self.predict(inputs)
+        _, values, _ = self.predict(inputs)
         values = np.squeeze(values)
 
         return values
@@ -131,59 +126,17 @@ class ActorCriticModel(tf.keras.models.Model):
         inputs = [np.asarray(l) for l in zip(*inputs)]
         return inputs
 
-class Custom_Convs(tf.keras.Model):
-    def __init__(self, conv_size, actv="relu"):
-        super().__init__(name='')
-
-        self.convs = [layers.Conv2D(padding="same",
-                                    kernel_size=k,
-                                    strides=s,
-                                    filters=f,
-                                    activation=actv,
-                                    name="conv_{}".format(i))
-                      for i,(k,s,f) in enumerate(conv_size)]
-    
-    def call(self, x):
-        for conv in self.convs:
-            x = conv(x)
-        return x
-
-class Quake_Block(tf.keras.Model):
-    def __init__(self):
-        super().__init__(name='')
-
-        # Quake 3 Deepmind style convolutions
-        # Like dopamine but with an additional 3x3 kernel, and skip connections
-        self.conv2A = layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32, activation="relu")
-        self.conv2B = layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64, activation="relu")
-        self.conv2C = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
-        self.activationC = layers.Activation("relu")
-        self.conv2D = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
-        self.activationD = layers.Activation("relu")
-
-    def call(self, x):
-        x = self.conv2A(x)
-        x = skip_1 = self.conv2B(x)
-
-        x = self.conv2C(x)
-        x = skip_2 = layers.add([x, skip_1])
-        x = self.activationC(x)
-
-        x = self.conv2D(x)
-        x = layers.add([x, skip_2])
-        x = self.activationD(x)
-
-        return x
 
 
 
 if __name__ == '__main__':
-    model = ActorCriticModel(num_actions=4,
-                             state_size=[84,84,1],
-                             stack_size=4,
-                             actor_fc=[32,16],
-                             critic_fc=[32,16],
-                             conv_size="quake")
+    model = AuxActorCriticModel(num_actions=4,
+                                state_size=[84,84,1],
+                                stack_size=4,
+                                actor_fc=[32,16],
+                                critic_fc=[32,16],
+                                retro=True,
+                                conv_size="quake")
     print(model.trainable_weights)
     input()
 

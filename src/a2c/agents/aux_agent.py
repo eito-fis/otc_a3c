@@ -2,18 +2,20 @@
 import os
 from tqdm import tqdm
 from collections import deque
+from PIL import Image
 
 import numpy as np
 import tensorflow as tf
+import tensorflow_hub as tf_hub
 
 from src.a2c.envs.parallel_env import ParallelEnv
-from src.a2c.models.actor_critic_model import ActorCriticModel
-from src.a2c.runners.runner import Runner
-from src.a2c.runners.gae_runner import GAE_Runner
+from src.a2c.models.aux_actor_critic_model import AuxActorCriticModel
+from src.a2c.runners.aux_runner import AuxRunner
+from src.a2c.agents.ppo_agent import PPOAgent
 
-class PPOAgent():
+class AuxAgent(PPOAgent):
     '''
-    PPO Agent class. Trains the model
+    Auxillary Output PPO Agent class. Trains the model
 
     train_steps: Number of episodes to play and train on
     update_epochs: Number of update epochs to run per train step
@@ -36,6 +38,7 @@ class PPOAgent():
                  learning_rate=0.00042,
                  entropy_discount=0.01,
                  value_discount=0.5,
+                 aux_discount=1,
                  epsilon=0.2,
                  num_steps=None,
                  env_func=None,
@@ -46,6 +49,7 @@ class PPOAgent():
                  conv_size=None,
                  gae=False,
                  retro=False,
+                 num_aux=8,
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
@@ -53,44 +57,21 @@ class PPOAgent():
                  wandb=None,
                  build=True):
 
-        # Build optimizer
-        self.opt = tf.optimizers.Adam(learning_rate)
-
-        # Setup training parameters
-        self.train_steps = train_steps
-        self.entropy_discount = entropy_discount
-        self.value_discount = value_discount
-        self.gae = gae
-
-        # PPO Specific parameters
-        self.update_epochs = update_epochs
-        self.num_minibatches = num_minibatches
-        self.b_size = num_steps * num_envs
-        self.mb_size = self.b_size // self.num_minibatches
-        self.epsilon = epsilon
-        self.num_actions = num_actions
-
-        # Setup logging parameters
-        self.floor_queue = deque(maxlen=100)
-        self.reward_queue = deque(maxlen=100)
-        self.logging_period = logging_period
-        self.checkpoint_period = checkpoint_period
-        self.episodes = 0
-        
-        # Build logging directories
-        self.log_dir = os.path.join(output_dir, "logs/")
-        os.makedirs(os.path.dirname(self.log_dir), exist_ok=True)
-        self.checkpoint_dir = os.path.join(output_dir, "checkpoints/")
-        os.makedirs(os.path.dirname(self.checkpoint_dir), exist_ok=True)
-
-        # Build summary writer
-        self.summary_writer = tf.summary.create_file_writer(self.log_dir)
-
-        # Setup wandb
-        if wandb:
-            self.wandb = wandb
-        else:
-            self.wandb = None
+        super().__init__(train_steps=train_steps,
+                         update_epochs=update_epochs,
+                         num_minibatches=num_minibatches,
+                         learning_rate=learning_rate,
+                         entropy_discount=entropy_discount,
+                         value_discount=value_discount,
+                         epsilon=epsilon,
+                         num_steps=num_steps,
+                         num_envs=num_envs,
+                         num_actions=num_actions,
+                         logging_period=logging_period,
+                         checkpoint_period=checkpoint_period,
+                         output_dir=output_dir,
+                         wandb=wandb,
+                         build=False)
 
         if build:
             # Build environment
@@ -98,42 +79,38 @@ class PPOAgent():
             self.env = ParallelEnv(env_func_list)
 
             # Build model
-            self.model = ActorCriticModel(num_actions=num_actions,
-                                          state_size=self.env.state_size,
-                                          stack_size=self.env.stack_size,
-                                          actor_fc=actor_fc,
-                                          critic_fc=critic_fc,
-                                          conv_size=conv_size,
-                                          retro=retro)
+            self.model = AuxActorCriticModel(num_actions=num_actions,
+                                             num_aux=num_aux,
+                                             state_size=self.env.state_size,
+                                             stack_size=self.env.stack_size,
+                                             actor_fc=actor_fc,
+                                             critic_fc=critic_fc,
+                                             conv_size=conv_size,
+                                             retro=retro)
             if restore_dir != None:
                 self.model.load_weights(restore_dir)
-            
-            # Build runner
-            if self.gae:
-                self.runner = GAE_Runner(env=self.env,
-                                         model=self.model,
-                                         num_steps=num_steps)
-            else:
-                self.runner = Runner(env=self.env,
-                                     model=self.model,
-                                     num_steps=num_steps)
+
+            self.runner = AuxRunner(env=self.env,
+                                    model=self.model,
+                                    num_steps=num_steps)
+        self.aux_discount = aux_discount
 
     def train(self):
         for i in range(self.train_steps):
             print("\nStarting training step {}...\n".format(i))
 
             # Reset step logging
-            step_policy_loss, step_entropy_loss, step_value_loss, step_clip_frac = [], [], [], []
+            step_policy_loss, step_entropy_loss, step_value_loss, step_aux_loss, step_clip_frac = [], [], [], [], []
             # Generate indicies for minibatch sampling
             indicies = np.arange(self.b_size)
             # Generate a batch from one rollout
-            b_states, b_rewards, b_dones, b_actions, b_values, b_probs, true_reward, ep_infos = self.runner.generate_batch()
+            b_states, b_rewards, b_dones, b_actions, b_values, b_probs, b_aux, true_reward, ep_infos = self.runner.generate_batch()
             
             # PPO Updates!
             print("\nStarting PPO updates...")
             for e in range(self.update_epochs):
                 # Reset epoch logging
-                epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_clip_frac = [], [], [], []
+                epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_aux_loss, epoch_clip_frac = [], [], [], [], []
                 # Shuffle indicies
                 np.random.shuffle(indicies)
 
@@ -141,10 +118,10 @@ class PPOAgent():
                     # Generate minibatch
                     end = start + self.mb_size
                     mb_indicies = indicies[start:end]
-                    mb_states, mb_rewards, mb_actions, mb_values, mb_probs = \
+                    mb_states, mb_rewards, mb_actions, mb_values, mb_aux, mb_probs = \
                             (arr[mb_indicies] for arr in (b_states, b_rewards,
                                                           b_actions, b_values,
-                                                          b_probs))
+                                                          b_aux, b_probs))
                     # Calculate advantages
                     advs = mb_rewards - mb_values
                     # Normalize if using GAE
@@ -154,7 +131,7 @@ class PPOAgent():
                     with tf.GradientTape() as tape:
                         # Get actions probabilities and values for all states
                         processed_states = self.model.process_inputs(mb_states)
-                        logits, values = self.model(processed_states)
+                        logits, values, aux_pred = self.model(processed_states)
 
                         # Model returns un-softmaxed logits
                         logits = tf.nn.softmax(logits)
@@ -177,10 +154,14 @@ class PPOAgent():
                         # Calculate our value loss
                         mse = tf.keras.losses.MeanSquaredError()
                         value_loss = mse(mb_rewards[:, None], values)
+                        # Calculate our aux loss
+                        aux_loss = cce(mb_aux, aux_pred)
+
 
                         total_loss = policy_loss + \
                                      (entropy_loss * self.entropy_discount) + \
-                                     (value_loss * self.value_discount)
+                                     (value_loss * self.value_discount) + \
+                                     (aux_loss * self.aux_discount)
 
                     # Calculate and apply gradient
                     total_grads = tape.gradient(total_loss, self.model.trainable_weights)
@@ -191,6 +172,7 @@ class PPOAgent():
                     epoch_policy_loss.append(policy_loss.numpy())
                     epoch_entropy_loss.append(entropy_loss.numpy())
                     epoch_value_loss.append(value_loss.numpy())
+                    epoch_aux_loss.append(aux_loss.numpy())
 
                     # Calculate the fraction of our mini batch that was clipped
                     clips = tf.greater(tf.abs(ratio - 1), self.epsilon)
@@ -198,27 +180,30 @@ class PPOAgent():
                     epoch_clip_frac.append(clip_frac)
 
                 # Log epoch data
-                self.log_epoch(e, epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_clip_frac)
+                self.log_epoch(e, epoch_policy_loss, epoch_entropy_loss, epoch_value_loss, epoch_aux_loss, epoch_clip_frac)
                 # Store epoch metrics
                 step_policy_loss.append(np.mean(epoch_policy_loss))
                 step_entropy_loss.append(np.mean(epoch_entropy_loss))
                 step_value_loss.append(np.mean(epoch_value_loss))
+                step_aux_loss.append(np.mean(epoch_aux_loss))
 
             # Log step data
             self.log_step(b_rewards, b_values, b_probs, step_policy_loss,
-                          step_entropy_loss, step_value_loss, epoch_clip_frac,
-                          ep_infos, i)
+                          step_entropy_loss, step_value_loss, step_aux_loss,
+                          epoch_clip_frac, ep_infos, i)
 
-    def log_epoch(self, e, policy_loss, entropy_loss, value_loss, clip_frac):
+    def log_epoch(self, e, policy_loss, entropy_loss, value_loss, aux_loss, clip_frac):
         avg_policy_loss = np.mean(policy_loss)
         avg_entropy_loss = np.mean(entropy_loss)
         avg_value_loss = np.mean(value_loss)
+        avg_aux_loss = np.mean(aux_loss)
         avg_clip_frac = np.mean(clip_frac)
 
         print("\t\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
+        print("\t\t| Aux Loss: {} |".format(avg_aux_loss))
         print("\t\t| Fraction Clipped: {} |".format(avg_clip_frac))
 
-    def log_step(self, rewards, values, probs, policy_loss, entropy_loss, value_loss, clip_frac, ep_infos, i):
+    def log_step(self, rewards, values, probs, policy_loss, entropy_loss, value_loss, aux_loss, clip_frac, ep_infos, i):
         # Pull specific info from info array and store in queue
         for info in ep_infos:
             self.floor_queue.append(info["floor"])
@@ -230,12 +215,14 @@ class PPOAgent():
         avg_policy_loss = np.mean(policy_loss)
         avg_entropy_loss = np.mean(entropy_loss)
         avg_value_loss = np.mean(value_loss)
+        avg_aux_loss = np.mean(aux_loss)
         avg_clip_frac = np.mean(clip_frac)
         explained_variance, env_variance = self.explained_variance(values, rewards)
 
         print("\nTrain Step Metrics:")
         print("\t| Total Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("\t| Policy Loss: {} | Entropy Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_entropy_loss, avg_value_loss))
+        print("\t| Aux Loss: {} |".format(avg_aux_loss))
         print("\t| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, env_variance))
         print()
 
@@ -247,6 +234,7 @@ class PPOAgent():
                 tf.summary.scalar("Policy Loss", avg_policy_loss, i)
                 tf.summary.scalar("Entropy Loss", avg_entropy_loss, i)
                 tf.summary.scalar("Value Loss", avg_value_loss, i)
+                tf.summary.scalar("Aux Loss", avg_aux_loss, i)
                 tf.summary.scalar("Explained Variance", explained_variance, i)
                 tf.summary.scalar("Fraction Clipped", avg_clip_frac, i)
             if self.wandb != None:
@@ -257,6 +245,7 @@ class PPOAgent():
                                 "Policy Loss": avg_policy_loss,
                                 "Entropy Loss": avg_entropy_loss,
                                 "Value Loss": avg_value_loss,
+                                "Aux Loss": avg_aux_loss,
                                 "Explained Variance": explained_variance,
                                 "Fraction Clipped": avg_clip_frac,
                                 "Probabilities": self.wandb.Histogram(probs, num_bins=10)})
@@ -265,21 +254,6 @@ class PPOAgent():
             model_save_path = os.path.join(self.checkpoint_dir, "model_{}.h5".format(i))
             self.model.save_weights(model_save_path)
             print("Model saved to {}".format(model_save_path))
-
-    def explained_variance(self, y_pred, y_true):
-        """
-        Computes fraction of variance that ypred explains about y.
-        Returns 1 - Var[y-ypred] / Var[y]
-        interpretation:
-            ev=0  =>  might as well have predicted zero
-            ev=1  =>  perfect prediction
-            ev<0  =>  worse than just predicting zero
-        """
-        assert y_true.ndim == 1 and y_pred.ndim == 1
-        env_variance = np.var(y_true)
-        explained_variance = np.nan if env_variance == 0 else 1 - np.var(y_true - y_pred) / env_variance
-        return explained_variance, env_variance
-
 
 
 

@@ -23,8 +23,9 @@ def worker(parent_remote, remote, env_fn_wrapper, idx):
             total_info = info.copy()
             remote.send((state, reward, done, total_info))
         elif cmd == 'reset':
-            state = env.reset()
-            remote.send(state)
+            state, info = env.reset()
+            total_info = info.copy()
+            remote.send((state, total_info))
         elif cmd == 'close':
             remote.close()
             break
@@ -56,7 +57,7 @@ class ParallelEnv():
     '''
     def __init__(self, env_fns):
         nenvs = len(env_fns)
-        ctx = multiprocessing.get_context("fork")
+        ctx = multiprocessing.get_context("spawn")
 
         # Build pipes for communication to and from processed
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
@@ -97,20 +98,24 @@ class ParallelEnv():
         states = np.empty(len(_states), dtype=object)
         states[:] = _states
 
-        return states, np.stack(rewards), np.stack(dones), infos
+        return states, np.stack(rewards), np.stack(dones), np.stack(infos)
 
     def reset(self):
         # Send each env a reset command...
         for remote in self.remotes:
             remote.send(('reset', None))
 
-        # ...then wait for the response from each one
-        _states = [remote.recv() for remote in self.remotes]
+        # ..then wait for the response from each one
+        results = [remote.recv() for remote in self.remotes]
+        
+        # Split responses up into individual lists
+        _states, infos = zip(*results)
 
         # Convert list of tuples into array of tuples
         states = np.empty(len(_states), dtype=object)
         states[:] = _states
-        return states
+
+        return states, np.stack(infos)
 
     def close(self):
         # Close each env, then end each process
