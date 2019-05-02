@@ -134,8 +134,10 @@ class WrappedObstacleTowerEnv():
         if self.retro is True:
             ret_state = (stacked_state, floor_data)
         else:
-            #key_time_data = np.array([key, time]).astype(np.float32)
-            key_time_data = np.array([key]).astype(np.float32)
+            # Clip time to 2000, then normalize
+            time = (2000. if time > 2000 else time) / 2000.
+            key_time_data = np.array([key, time]).astype(np.float32)
+            #key_time_data = np.array([key]).astype(np.float32)
             ret_state = (stacked_state, floor_data, key_time_data)
 
         # Empty info dict for any children to add to
@@ -201,8 +203,10 @@ class WrappedObstacleTowerEnv():
             if self.retro is True:
                 ret_state = (stacked_state, floor_data)
             else:
-                #key_time_data = np.array([key, time]).astype(np.float32)
-                key_time_data = np.array([key]).astype(np.float32)
+                # Clip time to 2000, then normalize
+                time = (2000. if time > 2000 else time) / 2000.
+                key_time_data = np.array([key, time]).astype(np.float32)
+                #key_time_data = np.array([key]).astype(np.float32)
                 ret_state = (stacked_state, floor_data, key_time_data)
 
         return ret_state, reward, done, info

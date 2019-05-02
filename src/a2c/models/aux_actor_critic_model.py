@@ -56,7 +56,7 @@ class AuxActorCriticModel(ActorCriticModel):
         elif build:
             self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
                         np.random.random((max_floor + 1,)).astype(np.float32),
-                        np.random.random((1,)).astype(np.float32)]])
+                        np.random.random((2,)).astype(np.float32)]])
 
     def call(self, inputs):
         if self.retro:

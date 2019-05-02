@@ -59,13 +59,14 @@ class ActorCriticModel(tf.keras.models.Model):
         self.value = layers.Dense(1, name='value')
 
         # Build the final total model
-        if build and retro:
-            self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
-                        np.random.random((max_floor + 1,)).astype(np.float32)]])
-        elif build:
-            self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
-                        np.random.random((max_floor + 1,)).astype(np.float32),
-                        np.random.random((1,)).astype(np.float32)]])
+        if build:
+            if retro:
+                self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
+                            np.random.random((max_floor + 1,)).astype(np.float32)]])
+            else:
+                self.step([[np.random.random((tuple(self.state_size))).astype(np.float32),
+                            np.random.random((max_floor + 1,)).astype(np.float32),
+                            np.random.random((2,)).astype(np.float32)]])
 
     def call(self, inputs):
         if self.retro:

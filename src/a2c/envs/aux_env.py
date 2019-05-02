@@ -107,12 +107,8 @@ class AuxEnv(WrappedObstacleTowerEnv):
     def reset(self):
         ret_state, info = super().reset()
 
-        if self.retro:
-            observation = (self.state / 255).astype(np.float32)
-        else:
-            observation, _, _ = self.state
-        scaled_obs = self.scale_up_observation(observation)
-        aux = np.squeeze(self.aux(scaled_obs[None, :]).numpy())
+        # We know it is always a start door on restart
+        aux = np.array([0, 0, 0, 0, 0, 0, 0, 1, 0])
 
         info["aux"] = aux
 
@@ -121,10 +117,7 @@ class AuxEnv(WrappedObstacleTowerEnv):
     def step(self, action):
         ret_state, reward, done, info = super().step(action)
 
-        if self.retro:
-            observation = (self.state / 255).astype(np.float32)
-        else:
-            observation, _, _ = self.state
+        observation = info["brain_info"].visual_observations[0][0]
         scaled_obs = self.scale_up_observation(observation)
         aux = np.squeeze(self.aux(scaled_obs[None, :]).numpy())
 
