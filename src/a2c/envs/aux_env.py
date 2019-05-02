@@ -28,24 +28,6 @@ class WrappedKerasLayer(tf.keras.layers.Layer):
         tensor_var = tf.squeeze(tensor_var)
         return tensor_var
 
-class AuxModel(tf.keras.Model):
-    def __init__(self, num_aux):
-        super().__init__()
-        self.conv = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
-                                    output_shape=[1280],
-                                    trainable=False)
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.result = tf.keras.layers.Dense(num_aux, activation='softmax')
-
-        self.call(np.zeros((1, 224, 224, 3)).astype(np.float32))
-
-    def call(self, data):
-        data = self.conv(data)
-        data = self.dense1(data)
-        data = self.result(data)
-        return data
-
-
 class AuxEnv(WrappedObstacleTowerEnv):
 
     def __init__(
@@ -61,8 +43,6 @@ class AuxEnv(WrappedObstacleTowerEnv):
         mobilenet=False,
         gray_scale=False,
         floor=0,
-        num_aux=9,
-        aux_dir=None
         ):
         '''
         Arguments:
@@ -88,46 +68,19 @@ class AuxEnv(WrappedObstacleTowerEnv):
                          gray_scale=gray_scale,
                          floor=floor)
 
-        # Build ground-truth aux output model
-        self.aux = AuxModel(num_aux)
-        if aux_dir != None:
-            self.aux.load_weights(aux_dir)
-        else:
-            raise ValueError('Weights for the aux ground truth model must be specified')
-
-    def scale_up_observation(self, observation):
-        """
-        Re-sizes obs to 224x224 for mobilenet
-        """
-        observation = (observation * 255).astype(np.uint8)
-        obs_image = Image.fromarray(observation)
-        obs_image = obs_image.resize((224, 224), Image.NEAREST)
-        return np.array(obs_image).astype(np.float32) / 255.
-
     def reset(self):
         ret_state, info = super().reset()
 
-        # We know it is always a start door on restart
-        aux = np.array([0, 0, 0, 0, 0, 0, 0, 1, 0])
-
-        info["aux"] = aux
+        info["reset"] = True
 
         return ret_state, info
 
     def step(self, action):
         ret_state, reward, done, info = super().step(action)
 
-        observation = info["brain_info"].visual_observations[0][0]
-        scaled_obs = self.scale_up_observation(observation)
-        aux = np.squeeze(self.aux(scaled_obs[None, :]).numpy())
-
-        info["aux"] = aux
+        if "episode_info" in info:
+            info["reset"] = True
+        else:
+            info["reset"] = False
 
         return ret_state, reward, done, info
-
-    def close(self):
-        self._obstacle_tower_env.close()
-
-    def floor(self, floor):
-        self._obstacle_tower_env.floor(floor)
-        self.start_floor = floor

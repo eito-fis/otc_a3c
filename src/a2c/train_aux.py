@@ -78,9 +78,7 @@ def main(args,
                       mobilenet=args.mobilenet,
                       gray_scale=args.gray,
                       realtime_mode=args.render,
-                      retro=args.retro,
-                      num_aux=num_aux,
-                      aux_dir=args.aux_dir)
+                      retro=args.retro)
 
     print("Building agent...")
     agent = AuxAgent(train_steps=train_steps,
@@ -100,6 +98,7 @@ def main(args,
                      gae=args.gae,
                      retro=args.retro,
                      num_aux=num_aux,
+                     aux_dir=args.aux_dir,
                      logging_period=logging_period,
                      checkpoint_period=checkpoint_period,
                      output_dir=args.output_dir,

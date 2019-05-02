@@ -50,6 +50,7 @@ class AuxAgent(PPOAgent):
                  gae=False,
                  retro=False,
                  num_aux=8,
+                 aux_dir=None,
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
@@ -92,7 +93,9 @@ class AuxAgent(PPOAgent):
 
             self.runner = AuxRunner(env=self.env,
                                     model=self.model,
-                                    num_steps=num_steps)
+                                    num_steps=num_steps,
+                                    num_aux=num_aux,
+                                    aux_dir=aux_dir)
         self.aux_discount = aux_discount
 
     def train(self):

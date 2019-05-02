@@ -1,15 +1,38 @@
 
 import numpy as np
 from tqdm import tqdm
+from PIL import Image
+
+import tensorflow as tf
+import tensorflow_hub as hub
 
 from src.a2c.runners.runner import Runner
+
+class AuxModel(tf.keras.Model):
+    def __init__(self, num_aux):
+        super().__init__()
+        self.conv = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
+                                    output_shape=[1280],
+                                    trainable=False)
+        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
+        self.result = tf.keras.layers.Dense(num_aux, activation='softmax')
+
+        self.call(np.zeros((1, 224, 224, 3)).astype(np.float32))
+
+    def call(self, data):
+        data = self.conv(data)
+        data = self.dense1(data)
+        data = self.result(data)
+        return data
 
 class AuxRunner(Runner):
     def __init__(self,
                  env=None,
                  model=None,
                  num_steps=None,
-                 gamma=0.99):
+                 gamma=0.99,
+                 num_aux=9,
+                 aux_dir=None):
         """
         A runner to learn the policy of an environment for a model
         env: The environment to learn from
@@ -21,6 +44,13 @@ class AuxRunner(Runner):
                          model=model,
                          num_steps=num_steps,
                          gamma=gamma)
+
+        # Build ground-truth aux output model
+        self.aux = AuxModel(num_aux)
+        if aux_dir != None:
+            self.aux.load_weights(aux_dir)
+        else:
+            raise ValueError('Weights for the aux ground truth model must be specified')
 
     def generate_batch(self):
         """
@@ -44,7 +74,7 @@ class AuxRunner(Runner):
         b_probs = np.asarray(b_probs, dtype=np.float32).swapaxes(0, 1)
         b_dones = np.asarray(b_dones, dtype=np.bool).swapaxes(0, 1)
         b_dones = b_dones[:, 1:]
-        b_aux = np.asarray(b_aux, dtype=self.infos[0]["aux"].dtype).swapaxes(0, 1)
+        b_aux = np.asarray(b_aux).swapaxes(0, 1)
         true_rewards = np.copy(b_rewards)
         last_values = self.model.get_values(self.states).tolist()
 
@@ -79,7 +109,21 @@ class AuxRunner(Runner):
             b_values.append(values)
             b_probs.append(probs)
             b_dones.append(self.dones)
-            b_aux.append(np.asarray([info["aux"] for info in self.infos]))
+
+            # Get auxillary outputs for each env
+            aux_obs = []
+            reset_indicies = []
+            for i,info in enumerate(self.infos):
+                if info["reset"]:
+                    aux_obs.append(np.zeros((224,224,3)))
+                    reset_indicies.append(i)
+                else:
+                    aux_obs.append(self.scale_up_obs(info["brain_info"].visual_observations[0][0]))
+            aux_obs = np.array(aux_obs)
+            aux = np.squeeze(self.aux.predict(aux_obs))
+            if len(reset_indicies) > 0:
+                aux[reset_indicies] = np.array([0, 0, 0, 0, 0, 0, 0, 1, 0])
+            b_aux.append(aux)
 
             # Take actions
             self.states, rewards, self.dones, self.infos = self.env.step(actions)
@@ -93,6 +137,15 @@ class AuxRunner(Runner):
                     ep_infos.append(ep_info)
 
         return b_states, b_rewards, b_dones, b_actions, b_values, b_probs, b_aux, ep_infos
+
+    def scale_up_obs(self, observation):
+        """
+        Re-sizes obs to 224x224 for mobilenet
+        """
+        observation = (observation * 255).astype(np.uint8)
+        obs_image = Image.fromarray(observation)
+        obs_image = obs_image.resize((224, 224), Image.NEAREST)
+        return np.array(obs_image).astype(np.float32) / 255.
 
 
 
