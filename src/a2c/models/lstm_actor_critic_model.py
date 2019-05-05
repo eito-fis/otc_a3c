@@ -3,19 +3,19 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 
-class TD_Quake_Block(tf.keras.Model):
+class Quake_Block(tf.keras.Model):
     def __init__(self):
-        super(TD_Quake_Block, self).__init__(name='')
+        super(Quake_Block, self).__init__(name='')
 
         # Quake 3 Deepmind style convolutions
-        # Like dopamine but with an additional 3x3 kernel, and skip connections
-        self.conv2A = layers.TimeDistributed(layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32, activation="relu"))
-        self.conv2B = layers.TimeDistributed(layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64, activation="relu"))
-        self.conv2C = layers.TimeDistributed(layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64))
+        # Like Nature CNN but with an additional 3x3 kernel and skip connections
+        self.conv2A = layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32, activation="relu")
+        self.conv2B = layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64, activation="relu")
+        self.conv2C = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
         self.activationC = layers.Activation("relu")
-        self.conv2D = layers.TimeDistributed(layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64))
+        self.conv2D = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
         self.activationD = layers.Activation("relu")
-        self.flatten = layers.TimeDistributed(layers.Flatten())
+        self.flatten = layers.Flatten()
 
     def call(self, x):
         x = self.conv2A(x)
@@ -54,10 +54,7 @@ class Custom_LSTM(layers.Layer):
         print(input_tensor)
         print(cell_state)
         print(mask_tensor)
-        for idx in range(self.input_size):
-            _input = input_tensor[:, idx]
-            mask = mask_tensor[:, idx]
-
+        for idx, (_input, mask) in enumerate(zip(input_tensor, mask_tensor)):
             # Reset cell state and hidden if our this timestep is a restart
             cell_state = cell_state * (1 - mask)
             hidden = hidden * (1 - mask)
@@ -91,9 +88,7 @@ class Custom_LSTM(layers.Layer):
 
 class LSTMActorCriticModel(tf.keras.models.Model):
     '''
-    Actor Critic Model
-    - Contains both our actor and critic model seperately
-    as Keras Models
+    LSTMActor Critic Model
     Arguments:
     num_actions: Number of logits the actor model will output
     state_size: List containing the expected size of the state
@@ -103,12 +98,6 @@ class LSTMActorCriticModel(tf.keras.models.Model):
     critic_fc: Iterable containing the amount of neurons per layer for the critic model
         ex: (1024, 512, 256) would make 3 fully connected layers, with 1024, 512 and 256
             layers respectively
-    conv_size: Iterable containing the kernel size, stride and number of filters for each
-               convolutional layer.
-        ex: ((8, 4, 16)) would make 1 convolution layer with an 8x8 kernel, (4, 4) stride
-            and 16 filters
-    max_pooling: Whether or not to throw max pooling layers after convolutional layers.
-                 Currently only does (2,2) pooling.
     '''
     def __init__(self,
                  num_actions=None,
@@ -131,17 +120,17 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
 
         # Build convolutional layer
-        self.convs = TD_Quake_Block()
+        self.convs = Quake_Block()
         
         # Build fully connected layers that go between convs and LSTM
-        self.before_fc = [layers.TimeDistributed(layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i))) for i,(neurons) in enumerate(before_fc)]
+        self.before_fc = [layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i)) for i,(neurons) in enumerate(before_fc)]
 
         # Build LSTM
         self.lstm = Custom_LSTM(lstm_size, num_steps, 1.0)
 
         # Build the fully connected layers for the actor and critic models
-        self.actor_fc = [layers.TimeDistributed(layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i))) for i,(neurons) in enumerate(actor_fc)]
-        self.critice_fc = [layers.TimeDistributed(layers.Dense(neurons, activation="relu", name="critic_dense_{}".format(i))) for i,(neurons) in enumerate(critic_fc)]
+        self.actor_fc = [layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i)) for i,(neurons) in enumerate(actor_fc)]
+        self.critice_fc = [layers.Dense(neurons, activation="relu", name="critic_dense_{}".format(i)) for i,(neurons) in enumerate(critic_fc)]
 
         # Build the output layers for the actor and critic models
         self.actor_logits = layers.Dense(num_actions, name='policy_logits')
@@ -153,11 +142,13 @@ class LSTMActorCriticModel(tf.keras.models.Model):
     def call(self, inputs):
         obs, cell_state_hidden, reset_mask = inputs
 
-        x = self.convs(obs)
+        before_x = self.convs(obs)
         for l in self.before_fc:
-            x = l(x)
+            before_x = l(before_x)
 
-        x, cell_state_hidden = self.lstm(x, cell_state_hidden, reset_mask)
+        lstm_x = self.batch_to_seq(before_x)
+        lstm_x, cell_state_hidden = self.lstm(lstm_x, cell_state_hidden, reset_mask)
+        lstm_x = self.seq_to_batch(lstm_x)
 
         actor_x = x
         for l in actor_fc:
@@ -196,10 +187,36 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         return values
 
     def process_inputs(self, inputs):
-        # Convert n_envs x n_inputs list to n_inputs x n_envs list if we have
-        # multiple inputs
+        '''
+        Convert n_envs x n_inputs list to n_inputs x n_envs list if we have
+        multiple inputs
+        '''
         inputs = [np.asarray(l) for l in zip(*inputs)]
         return inputs
+
+    def batch_to_seq(self, tensor_batch, n_batch, n_steps, flat=False):
+        '''
+        Converts a flattened full batch of tensors into a sequence of tensors
+        Used to convert our batch into a form out LSTM Cell can iterate over and understand
+        '''
+        if flat:
+            tensor_batch = tf.reshape(tensor_batch, [n_batch, n_steps])
+        else:
+            tensor_batch = tf.reshape(tensor_batch, [n_batch, n_steps, -1])
+        return [tf.squeeze(v, [1]) for v in tf.split(axis=1, num_or_size_splits=n_steps, value=tensor_batch)]
+
+    def seq_to_bath(self, tensor_sequence, flat=False):
+        '''
+        Converts a sequence of tensors into a batch of tensors
+        '''
+        shape = tensor_sequence[0].get_shape().as_list()
+        if not flat:
+            assert len(shape) > 1
+            n_hidden = tensor_sequence[0].get_shape()[-1].value
+            return tf.reshape(tf.concat(axis=1, values=tensor_sequence), [-1, n_hidden])
+        else:
+            return tf.reshape(tf.stack(values=tensor_sequence, axis=1), [-1])
+        
 
 
 
