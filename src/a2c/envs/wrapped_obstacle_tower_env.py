@@ -108,7 +108,8 @@ class WrappedObstacleTowerEnv():
     def reset(self):
         # Reset env, stack and floor
         # (We save state as an attribute so child objects can access it)
-        self.state = self._obstacle_tower_env.reset()
+        config = {"total-floors": 11}
+        self.state = self._obstacle_tower_env.reset(config)
         self.current_floor = self.start_floor
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
