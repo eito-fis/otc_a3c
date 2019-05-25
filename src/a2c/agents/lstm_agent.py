@@ -8,9 +8,9 @@ import tensorflow as tf
 
 from src.a2c.envs.parallel_env import ParallelEnv
 from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
-from src.a2c.runners.LSTMrunner import LSTMRunner
+from src.a2c.runners.lstm_runner import LSTMRunner
 
-class PPOAgent():
+class LSTMAgent():
     '''
     PPO Agent class. Trains the model
 
@@ -43,6 +43,7 @@ class PPOAgent():
                  actor_fc=None,
                  critic_fc=None,
                  conv_size=None,
+                 before_fc=None,
                  lstm_size=None,
                  gae=False,
                  retro=False,
@@ -67,7 +68,7 @@ class PPOAgent():
         self.num_minibatches = num_minibatches
         self.b_size = num_steps * num_envs
         self.mb_size = self.b_size // self.num_minibatches
-        self.envs_per_batch = self.mb_size / num_steps
+        self.envs_per_batch = self.mb_size // num_steps
         self.epsilon = epsilon
         self.num_actions = num_actions
         self.num_envs = num_envs
@@ -107,6 +108,7 @@ class PPOAgent():
                                               num_steps=num_steps,
                                               actor_fc=actor_fc,
                                               critic_fc=critic_fc,
+                                              before_fc=before_fc,
                                               lstm_size=lstm_size,
                                               retro=retro)
             if restore_dir != None:
@@ -144,7 +146,7 @@ class PPOAgent():
                     mb_env_inds = env_indicies[start:end]
                     mb_flat_inds = flat_indicies[mb_env_inds].ravel()
                     mb_obs, mb_rewards, mb_dones, mb_actions, mb_values, mb_probs = \
-                            (arr[mb_flat_indicies] for arr in (b_obs, b_rewards, b_dones,
+                            (arr[mb_flat_inds] for arr in (b_obs, b_rewards, b_dones,
                                                           b_actions, b_values, b_probs))
                     mb_states = b_states[mb_env_inds]
                     # Calculate advantages
@@ -153,7 +155,8 @@ class PPOAgent():
                     # Calculate loss
                     with tf.GradientTape() as tape:
                         # Get actions probabilities and values for all states
-                        logits, values, _ = self.model(mb_obs, mb_states, mb_dones)
+                        mb_obs = self.model.process_inputs(mb_obs)
+                        logits, values, _ = self.model([mb_obs, mb_states, mb_dones])
 
                         # Model returns un-softmaxed logits
                         logits = tf.nn.softmax(logits)

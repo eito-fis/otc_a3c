@@ -2,7 +2,9 @@
 import numpy as np
 from tqdm import tqdm
 
-class LSTMRunner():
+from src.a2c.runners.runner import Runner
+
+class LSTMRunner(Runner):
     def __init__(self,
                  env=None,
                  model=None,
@@ -19,7 +21,7 @@ class LSTMRunner():
                          model=model,
                          num_steps=num_steps,
                          gamma=gamma)
-        self.states = np.zeros((env.num_envs, lstm_size * 2))
+        self.states = np.zeros((env.num_envs, model.lstm_size * 2)).astype(np.float32)
 
     def generate_batch(self):
         """
@@ -34,6 +36,7 @@ class LSTMRunner():
         """
 
         b_obs, b_rewards, b_dones, b_actions, b_values, b_probs, b_states, ep_infos = self.rollout()
+        print(len(b_dones))
         b_dones.append(self.dones)
 
         # Convert to numpy array and change shape from (num_steps, n_envs) to (n_envs, num_steps)
@@ -42,9 +45,9 @@ class LSTMRunner():
         b_actions = np.asarray(b_actions).swapaxes(0, 1)
         b_values = np.asarray(b_values, dtype=np.float32).swapaxes(0, 1)
         b_probs = np.asarray(b_probs, dtype=np.float32).swapaxes(0, 1)
-        b_dones = np.asarray(b_dones, dtype=np.bool).swapaxes(0, 1)
-        b_dones = b_dones[:, 1:]
+        b_dones = np.asarray(b_dones, dtype=np.float32).swapaxes(0, 1)
         b_masks = b_dones[:, :-1]
+        b_dones = b_dones[:, 1:]
         true_rewards = np.copy(b_rewards)
         last_values = self.model.get_values(self.obs, self.states, self.dones).tolist()
 
@@ -62,7 +65,7 @@ class LSTMRunner():
         b_obs, b_rewards, b_masks, b_actions, b_values, b_probs, true_rewards = \
             map(self.flatten, (b_obs, b_rewards, b_masks, b_actions,
                                b_values, b_probs, true_rewards))
-        return b_obs, b_rewards, b_dones, b_actions, b_values, b_probs, b_states, true_rewards, ep_infos
+        return b_obs, b_rewards, b_masks, b_actions, b_values, b_probs, b_states, true_rewards, ep_infos
 
     def rollout(self):
         # Init lists

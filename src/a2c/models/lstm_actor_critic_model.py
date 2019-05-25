@@ -39,7 +39,7 @@ class Custom_LSTM(layers.Layer):
         self.ortho_scale = ortho_scale
 
     def build(self, input_shape):
-        self.weight_x = self.add_weight(shape=(input_shape[-1], self.lstm_size * 4),
+        self.weight_x = self.add_weight(shape=(input_shape[0][-1], self.lstm_size * 4),
                                         initializer=tf.initializers.Orthogonal(gain=self.ortho_scale),
                                         trainable=True)
         self.weight_h = self.add_weight(shape=(self.lstm_size, self.lstm_size * 4),
@@ -51,22 +51,12 @@ class Custom_LSTM(layers.Layer):
 
     def call(self, input_tensor, cell_state_hidden, mask_tensor):
         cell_state, hidden = tf.split(axis=1, num_or_size_splits=2, value=cell_state_hidden)
-        print(input_tensor)
-        print(cell_state)
-        print(mask_tensor)
         for idx, (_input, mask) in enumerate(zip(input_tensor, mask_tensor)):
             # Reset cell state and hidden if our this timestep is a restart
             cell_state = cell_state * (1 - mask)
             hidden = hidden * (1 - mask)
             
             # Run LSTM cell!
-            print("=" * 20)
-            print(mask)
-            print(_input)
-            print(self.weight_x)
-            print(hidden)
-            print(self.weight_h)
-            input()
             gates = tf.matmul(_input, self.weight_x) + tf.matmul(hidden, self.weight_h) + self.bias
             in_gate, forget_gate, out_gate, cell_candidate = tf.split(axis=1, num_or_size_splits=4, value=gates)
 
@@ -82,9 +72,6 @@ class Custom_LSTM(layers.Layer):
 
         cell_state_hidden = tf.concat(axis=1, values=[cell_state, hidden])
         return input_tensor, cell_state_hidden
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
 
 class LSTMActorCriticModel(tf.keras.models.Model):
     '''
@@ -103,18 +90,22 @@ class LSTMActorCriticModel(tf.keras.models.Model):
                  num_actions=None,
                  state_size=None,
                  num_steps=None,
+                 num_envs=4,
                  max_floor=25,
                  stack_size=None,
                  before_fc=None,
                  actor_fc=None,
                  critic_fc=None,
-                 lstm_size=None):
+                 lstm_size=None,
+                 retro=True):
         super(LSTMActorCriticModel, self).__init__()
 
         self.num_actions = num_actions
         self.actor_fc = actor_fc
         self.critic_fc = critic_fc
         self.lstm_size = lstm_size
+        self.num_steps = num_steps
+        self.num_envs = num_envs
 
         # Multiply the final dimension of the state by stack_size to get correct input_size
         self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
@@ -130,14 +121,16 @@ class LSTMActorCriticModel(tf.keras.models.Model):
 
         # Build the fully connected layers for the actor and critic models
         self.actor_fc = [layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i)) for i,(neurons) in enumerate(actor_fc)]
-        self.critice_fc = [layers.Dense(neurons, activation="relu", name="critic_dense_{}".format(i)) for i,(neurons) in enumerate(critic_fc)]
+        self.critic_fc = [layers.Dense(neurons, activation="relu", name="critic_dense_{}".format(i)) for i,(neurons) in enumerate(critic_fc)]
 
         # Build the output layers for the actor and critic models
         self.actor_logits = layers.Dense(num_actions, name='policy_logits')
         self.value = layers.Dense(1, name='value')
 
         # Take a step with random input to build the model
-        self.step(np.random.random(((1, num_steps) + tuple(self.state_size))).astype(np.float32), np.zeros((1, lstm_size * 2)), np.zeros((1, num_steps)))
+        self.step(np.random.random((4,) + tuple(self.state_size)).astype(np.float32),
+                  np.zeros((num_envs, lstm_size * 2)).astype(np.float32),
+                  np.zeros((4,)).astype(np.float32))
 
     def call(self, inputs):
         obs, cell_state_hidden, reset_mask = inputs
@@ -147,16 +140,17 @@ class LSTMActorCriticModel(tf.keras.models.Model):
             before_x = l(before_x)
 
         lstm_x = self.batch_to_seq(before_x)
+        reset_mask = self.batch_to_seq(reset_mask, flat=True)
         lstm_x, cell_state_hidden = self.lstm(lstm_x, cell_state_hidden, reset_mask)
         lstm_x = self.seq_to_batch(lstm_x)
 
-        actor_x = x
-        for l in actor_fc:
+        actor_x = lstm_x
+        for l in self.actor_fc:
             actor_x = l(actor_x)
         logits = self.actor_logits(actor_x)
 
-        critic_x = x
-        for l in critic_fc:
+        critic_x = lstm_x
+        for l in self.critic_fc:
             critic_x = l(critic_x)
         value = self.value(critic_x)
 
@@ -165,7 +159,8 @@ class LSTMActorCriticModel(tf.keras.models.Model):
     def step(self, inputs, cell_state_hidden, reset_mask):
 
         # Make predictions on input
-        logits, values, cell_state_hidden = self.predict([inputs, cell_state_hidden, reset_mask])
+        inputs = self.process_inputs(inputs)
+        logits, values, cell_state_hidden = self([inputs, cell_state_hidden, reset_mask])
         probs = tf.nn.softmax(logits)
 
         # Sample from probability distributions
@@ -175,45 +170,51 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         one_hot_actions = tf.one_hot(actions, self.num_actions)
         action_probs = tf.reduce_sum(probs * one_hot_actions, axis=-1).numpy()
 
-        # TODO Fix bug where this line breaks the program when there is only 1 env
         values = np.squeeze(values)
 
-        return actions, values, action_probs, cell_state_hidden
+        return actions, values, action_probs, cell_state_hidden.numpy()
 
     def get_values(self, inputs, cell_state_hidden, reset_mask):
-        _, values = self.model.predict([inputs, cell_state_hidden, reset_mask])
-        values = np.squeeze(values)
+        inputs = self.process_inputs(inputs)
+        _, values, _ = self([inputs, cell_state_hidden, reset_mask])
+        values = tf.squeeze(values)
 
-        return values
+        return values.numpy()
 
     def process_inputs(self, inputs):
         '''
         Convert n_envs x n_inputs list to n_inputs x n_envs list if we have
         multiple inputs
         '''
-        inputs = [np.asarray(l) for l in zip(*inputs)]
+        inputs = np.array([l for l in inputs])
         return inputs
 
-    def batch_to_seq(self, tensor_batch, n_batch, n_steps, flat=False):
+    def batch_to_seq(self, tensor_batch, flat=False):
         '''
         Converts a flattened full batch of tensors into a sequence of tensors
-        Used to convert our batch into a form out LSTM Cell can iterate over and understand
+        Used to convert our batch into a form our LSTM Cell can iterate over and understand
         '''
-        if flat:
-            tensor_batch = tf.reshape(tensor_batch, [n_batch, n_steps])
+        shape = tensor_batch.get_shape().as_list()
+        # If batch size is the number of environments, we are stepping and only have 1 step
+        if shape[0] == self.num_envs:
+            n_steps = 1
         else:
-            tensor_batch = tf.reshape(tensor_batch, [n_batch, n_steps, -1])
+            n_steps = self.num_steps
+        if flat:
+            input_size = [1]
+        else:
+            input_size = shape[1:]
+        tensor_batch = tf.reshape(tensor_batch, [-1, n_steps] + input_size)
         return [tf.squeeze(v, [1]) for v in tf.split(axis=1, num_or_size_splits=n_steps, value=tensor_batch)]
 
-    def seq_to_bath(self, tensor_sequence, flat=False):
+    def seq_to_batch(self, tensor_sequence, flat=False):
         '''
         Converts a sequence of tensors into a batch of tensors
         '''
         shape = tensor_sequence[0].get_shape().as_list()
         if not flat:
             assert len(shape) > 1
-            n_hidden = tensor_sequence[0].get_shape()[-1].value
-            return tf.reshape(tf.concat(axis=1, values=tensor_sequence), [-1, n_hidden])
+            return tf.reshape(tf.concat(axis=1, values=tensor_sequence), [-1, shape[-1]])
         else:
             return tf.reshape(tf.stack(values=tensor_sequence, axis=1), [-1])
         
