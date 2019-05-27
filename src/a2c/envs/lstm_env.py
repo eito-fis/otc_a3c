@@ -52,7 +52,7 @@ class LSTMEnv(WrappedObstacleTowerEnv):
     def step(self, action):
         ret_state, reward, done, info = super().step(action)
 
-        if not done:
+        if not "episode_info" in info:
             ret_state = ret_state[0]
         done = np.float32(done)
 

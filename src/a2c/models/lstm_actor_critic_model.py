@@ -39,13 +39,16 @@ class Custom_LSTM(layers.Layer):
         self.ortho_scale = ortho_scale
 
     def build(self, input_shape):
-        self.weight_x = self.add_weight(shape=(input_shape[0][-1], self.lstm_size * 4),
+        self.weight_x = self.add_weight(name="input_weights",
+                                        shape=(input_shape[0][-1], self.lstm_size * 4),
                                         initializer=tf.initializers.Orthogonal(gain=self.ortho_scale),
                                         trainable=True)
-        self.weight_h = self.add_weight(shape=(self.lstm_size, self.lstm_size * 4),
+        self.weight_h = self.add_weight(name="hidden_weights",
+                                        shape=(self.lstm_size, self.lstm_size * 4),
                                         initializer=tf.initializers.Orthogonal(gain=self.ortho_scale),
                                         trainable=True)
-        self.bias = self.add_weight(shape=(self.lstm_size * 4,),
+        self.bias = self.add_weight(name="lstm_bias",
+                                    shape=(self.lstm_size * 4,),
                                     initializer=tf.initializers.Constant(0),
                                     trainable=True)
 
@@ -114,7 +117,7 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         self.convs = Quake_Block()
         
         # Build fully connected layers that go between convs and LSTM
-        self.before_fc = [layers.Dense(neurons, activation="relu", name="actor_dense_{}".format(i)) for i,(neurons) in enumerate(before_fc)]
+        self.before_fc = [layers.Dense(neurons, activation="relu", name="before_dense_{}".format(i)) for i,(neurons) in enumerate(before_fc)]
 
         # Build LSTM
         self.lstm = Custom_LSTM(lstm_size, num_steps, 1.0)
@@ -128,9 +131,9 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         self.value = layers.Dense(1, name='value')
 
         # Take a step with random input to build the model
-        self.step(np.random.random((4,) + tuple(self.state_size)).astype(np.float32),
+        self.step(np.random.random((num_envs,) + tuple(self.state_size)).astype(np.float32),
                   np.zeros((num_envs, lstm_size * 2)).astype(np.float32),
-                  np.zeros((4,)).astype(np.float32))
+                  np.zeros((num_envs,)).astype(np.float32))
 
     def call(self, inputs):
         obs, cell_state_hidden, reset_mask = inputs

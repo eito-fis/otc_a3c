@@ -36,7 +36,6 @@ class LSTMRunner(Runner):
         """
 
         b_obs, b_rewards, b_dones, b_actions, b_values, b_probs, b_states, ep_infos = self.rollout()
-        print(len(b_dones))
         b_dones.append(self.dones)
 
         # Convert to numpy array and change shape from (num_steps, n_envs) to (n_envs, num_steps)

@@ -106,6 +106,7 @@ class LSTMAgent():
                                               state_size=self.env.state_size,
                                               stack_size=self.env.stack_size,
                                               num_steps=num_steps,
+                                              num_envs=self.env.num_envs,
                                               actor_fc=actor_fc,
                                               critic_fc=critic_fc,
                                               before_fc=before_fc,
