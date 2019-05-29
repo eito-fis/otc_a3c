@@ -61,14 +61,14 @@ if __name__ == '__main__':
     data_file.close()
 
     #PARSE DATA#
-    states, floor_datas = zip(*memory.states)
-    states = np.array(states)
+    obs, floor_datas = zip(*memory.states)
+    obs = np.array(obs)
     floor_datas = np.array(floor_datas)
-    frame_data = zip(states, floor_datas)
-    print("Memory length: {}".format(len(states)))
+    frame_data = zip(obs, floor_datas)
+    print("Memory length: {}".format(len(obs)))
 
     #VIDEO PARAMETERS#
-    fps    = 10
+    fps    = 3
     width = 256*4
     height  = 84*4
 
@@ -94,23 +94,39 @@ if __name__ == '__main__':
     output_path = args.output_dir
     os.makedirs(output_path, exist_ok=True)
 
-    for index in range(len(states)):
-        # Make gradient
-        tensor_state = tf.convert_to_tensor(states[index], dtype=tf.float32)
-        tensor_floor_data = tf.convert_to_tensor(floor_datas[index], dtype=tf.float32)
-        action = memory.actions[index][0]
+    stdev = 0.01 * (np.amax(obs) - np.amin(obs))
+    states = memory.states
+    actions = [a[0] for a in memory.actions]
+    total_gradients = np.zeros_like(obs)
+    if args.smooth:
+        n_samples = 25
+    else:
+        n_samples = 1
+    magnitude = False
+
+    # Make gradient
+    for _ in range(n_samples):
+        processed = model.process_inputs(states)
+        if args.smooth:
+            noise = np.random.normal(0, stdev, obs.shape)
+            processed[0] = processed[0] + noise
         with tf.GradientTape() as g:
-            processed = model.process_inputs([(tensor_state, tensor_floor_data)])
             processed_state = tf.convert_to_tensor(processed[0], dtype=tf.float32)
             g.watch(processed_state)
             processed[0] = processed_state
             processed_floor = tf.convert_to_tensor(processed[1], dtype=tf.float32)
             processed[1] = processed_floor
-            logits, _ = model(processed)
-            logits = tf.squeeze(logits)
-            action_logit = logits[action]
-        saliency = np.square(np.squeeze(g.gradient(action_logit, processed_state).numpy()))
 
+            logits, value = model(processed)
+            logits = tf.squeeze(logits)
+            action_logits = [t[a] for t,a in zip(logits, actions)]
+        saliencies = np.square(np.squeeze(g.gradient(action_logits, processed_state).numpy()))
+        if magnitude:
+            total_gradients += (saliencies * saliencies)
+        else:
+            total_gradients += saliencies
+
+    for index, saliency in enumerate(total_gradients):
         # Make gray image
         gray_image = VisualizeImageGrayscale(saliency)
         gray_image = (gray_image - np.amin(gray_image)) / (np.amax(gray_image) - np.amin(gray_image))
@@ -119,7 +135,7 @@ if __name__ == '__main__':
         saliency = (saliency - np.amin(saliency)) / (np.amax(saliency) - np.amin(saliency))
         saliency = (saliency * 255).astype(np.uint8)
         # Make OG image
-        original_image = states[index]
+        original_image = states[index][0]
         original_image = (original_image - np.amin(original_image)) / (np.amax(original_image) - np.amin(original_image))
         original_image = (original_image * 255).astype(np.uint8)
         # Make combined image
@@ -127,26 +143,14 @@ if __name__ == '__main__':
         superimposed_image = superimpose(original_image, stacked_gray_image)
 
         combined_image = np.concatenate([original_image, superimposed_image, saliency], axis=1)
-
-        # Save images
-        #image = Image.fromarray(saliency, "RGB")
-        #color_path = os.path.join(args.output_dir, "color_{}.png".format(index))
-        #image.save(color_path)
-
-        #image = Image.fromarray(gray_image, "L")
-        #gray_path = os.path.join(args.output_dir, "gray_{}.png".format(index))
-        #image.save(gray_path)
-
-        #image = Image.fromarray(original_image, "RGB")
-        #original_path = os.path.join(args.output_dir, "original_{}.png".format(index))
-        #image.save(original_path)
-        frame = np.zeros((height,width,3),dtype=np.uint8)
-        draw_current_frame(frame, combined_image)
-
         image = Image.fromarray(combined_image, "RGB")
         combined_path = os.path.join(args.output_dir, "combined_{}.png".format(index))
         image.save(combined_path)
+
+        frame = np.zeros((height,width,3),dtype=np.uint8)
+        draw_current_frame(frame, combined_image)
         video.write(frame)
+
         print("Frame {} done!".format(index))
     video.release()
     cv2.destroyAllWindows()
