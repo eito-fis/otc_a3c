@@ -2,6 +2,7 @@
 import os
 import argparse
 import pickle
+import cv2
 
 from src.a2c.models.actor_critic_model import ActorCriticModel
 from src.a2c.eval.a2c_eval import Memory
@@ -10,6 +11,9 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 
+NOISE_WEIGHT = .5
+IMAGE_SHAPE = (84, 84, 3)
+
 def VisualizeImageGrayscale(image_3d, percentile=99):
   r"""Returns a 3D tensor as a grayscale 2D tensor.
   This method sums a 3D tensor across the absolute value of axis=2, and then
@@ -17,10 +21,30 @@ def VisualizeImageGrayscale(image_3d, percentile=99):
   """
   image_2d = np.sum(np.abs(image_3d), axis=2)
 
-  vmax = np.percentile(image_2d, percentile)
+  vmax = np.max(image_2d)
   vmin = np.min(image_2d)
 
   return np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
+
+def superimpose(source_image, noise_image):
+    new_image = cv2.normalize(source_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    noise_image = cv2.normalize(noise_image, None, 255, 0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    for y in range(IMAGE_SHAPE[0]):
+        for x in range(IMAGE_SHAPE[1]):
+            new_image[x,y] = (np.multiply(NOISE_WEIGHT,noise_image[x,y]) + np.multiply((1-NOISE_WEIGHT),new_image[x,y]))
+    return new_image
+
+def draw_current_frame(frame, image):
+    y_start, x_start = 0, 0
+    image_height, image_width = 84*4, 256*4
+    margin = 0
+
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, dsize=(image_width,image_height), interpolation=cv2.INTER_NEAREST)
+
+    y_pos, x_pos = y_start, x_start
+    y_end, x_end = y_pos + image_height, x_pos + image_width
+    frame[y_pos:y_end,x_pos:x_end,:] = image
 
 if __name__ == '__main__':
     #COMMAND-LINE ARGUMENTS#
@@ -42,6 +66,17 @@ if __name__ == '__main__':
     floor_datas = np.array(floor_datas)
     frame_data = zip(states, floor_datas)
     print("Memory length: {}".format(len(states)))
+
+    #VIDEO PARAMETERS#
+    fps    = 10
+    width = 256*4
+    height  = 84*4
+
+    #INIT VIDEO#
+    output_path = os.path.join(args.output_dir, 'gradient_saliency.mp4')
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(output_path, fourcc, fps, (width,height))
 
     NUM_ACTIONS = 4
     STATE_SHAPE = [84,84,3]
@@ -74,7 +109,7 @@ if __name__ == '__main__':
             logits, _ = model(processed)
             logits = tf.squeeze(logits)
             action_logit = logits[action]
-        saliency = np.squeeze(g.gradient(action_logit, processed_state).numpy())
+        saliency = np.square(np.squeeze(g.gradient(action_logit, processed_state).numpy()))
 
         # Make gray image
         gray_image = VisualizeImageGrayscale(saliency)
@@ -89,7 +124,9 @@ if __name__ == '__main__':
         original_image = (original_image * 255).astype(np.uint8)
         # Make combined image
         stacked_gray_image = np.stack((gray_image,) * 3, axis=-1)
-        combined_image = np.concatenate([original_image, stacked_gray_image, saliency], axis=1)
+        superimposed_image = superimpose(original_image, stacked_gray_image)
+
+        combined_image = np.concatenate([original_image, superimposed_image, saliency], axis=1)
 
         # Save images
         #image = Image.fromarray(saliency, "RGB")
@@ -103,14 +140,16 @@ if __name__ == '__main__':
         #image = Image.fromarray(original_image, "RGB")
         #original_path = os.path.join(args.output_dir, "original_{}.png".format(index))
         #image.save(original_path)
+        frame = np.zeros((height,width,3),dtype=np.uint8)
+        draw_current_frame(frame, combined_image)
 
         image = Image.fromarray(combined_image, "RGB")
         combined_path = os.path.join(args.output_dir, "combined_{}.png".format(index))
         image.save(combined_path)
+        video.write(frame)
         print("Frame {} done!".format(index))
-
-    print(gray_image)
-    input()
+    video.release()
+    cv2.destroyAllWindows()
 
         
         
