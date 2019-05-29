@@ -3,34 +3,6 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 
-class Quake_Block(tf.keras.Model):
-    def __init__(self):
-        super(Quake_Block, self).__init__(name='')
-
-        # Quake 3 Deepmind style convolutions
-        # Like Nature CNN but with an additional 3x3 kernel and skip connections
-        self.conv2A = layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32, activation="relu")
-        self.conv2B = layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64, activation="relu")
-        self.conv2C = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
-        self.activationC = layers.Activation("relu")
-        self.conv2D = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
-        self.activationD = layers.Activation("relu")
-        self.flatten = layers.Flatten()
-
-    def call(self, x):
-        x = self.conv2A(x)
-        x = skip_1 = self.conv2B(x)
-
-        x = self.conv2C(x)
-        x = skip_2 = layers.add([x, skip_1])
-        x = self.activationC(x)
-
-        x = self.conv2D(x)
-        x = layers.add([x, skip_2])
-        x = self.activationD(x)
-
-        return (self.flatten(x))
-
 class Custom_LSTM(layers.Layer):
     def __init__(self, lstm_size, input_size, ortho_scale):
         super(Custom_LSTM, self).__init__()
@@ -98,6 +70,7 @@ class LSTMActorCriticModel(tf.keras.models.Model):
                  stack_size=None,
                  before_fc=None,
                  actor_fc=None,
+                 conv_size=None,
                  critic_fc=None,
                  lstm_size=None,
                  retro=True):
@@ -114,7 +87,16 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         self.state_size = state_size[:-1] + [state_size[-1] * stack_size]
 
         # Build convolutional layer
-        self.convs = Quake_Block()
+        if conv_size is not None:
+            if isinstance(conv_size, tuple):
+                self.convs = Custom_Convs(conv_size)
+            elif conv_size == "quake":
+                self.convs = Quake_Block()
+            else:
+                raise ValueError("Invalid CNN Topology")
+            self.flatten = layers.Flatten()
+        else:
+            self.convs = None
         
         # Build fully connected layers that go between convs and LSTM
         self.before_fc = [layers.Dense(neurons, activation="relu", name="before_dense_{}".format(i)) for i,(neurons) in enumerate(before_fc)]
@@ -138,7 +120,11 @@ class LSTMActorCriticModel(tf.keras.models.Model):
     def call(self, inputs):
         obs, cell_state_hidden, reset_mask = inputs
 
-        before_x = self.convs(obs)
+        if self.convs:
+            conv_x = self.convs(obs)
+            before_x = self.flatten(conv_x)
+        else:
+            before_x = obs
         for l in self.before_fc:
             before_x = l(before_x)
 
@@ -220,6 +206,51 @@ class LSTMActorCriticModel(tf.keras.models.Model):
             return tf.reshape(tf.concat(axis=1, values=tensor_sequence), [-1, shape[-1]])
         else:
             return tf.reshape(tf.stack(values=tensor_sequence, axis=1), [-1])
+
+class Custom_Convs(tf.keras.Model):
+    def __init__(self, conv_size, actv="relu"):
+        super().__init__(name='')
+
+        self.convs = [layers.Conv2D(padding="same",
+                                    kernel_size=k,
+                                    strides=s,
+                                    filters=f,
+                                    activation=actv,
+                                    name="conv_{}".format(i))
+                      for i,(k,s,f) in enumerate(conv_size)]
+    
+    def call(self, x):
+        for conv in self.convs:
+            x = conv(x)
+        return x
+
+class Quake_Block(tf.keras.Model):
+    def __init__(self):
+        super(Quake_Block, self).__init__(name='')
+
+        # Quake 3 Deepmind style convolutions
+        # Like Nature CNN but with an additional 3x3 kernel and skip connections
+        self.conv2A = layers.Conv2D(padding="same", kernel_size=8, strides=4, filters=32, activation="relu")
+        self.conv2B = layers.Conv2D(padding="same", kernel_size=4, strides=2, filters=64, activation="relu")
+        self.conv2C = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
+        self.activationC = layers.Activation("relu")
+        self.conv2D = layers.Conv2D(padding="same", kernel_size=3, strides=1, filters=64)
+        self.activationD = layers.Activation("relu")
+
+    def call(self, x):
+        x = self.conv2A(x)
+        x = skip_1 = self.conv2B(x)
+
+        x = self.conv2C(x)
+        x = skip_2 = layers.add([x, skip_1])
+        x = self.activationC(x)
+
+        x = self.conv2D(x)
+        x = layers.add([x, skip_2])
+        x = self.activationD(x)
+
+        return x
+
         
 
 

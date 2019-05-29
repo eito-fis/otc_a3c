@@ -14,22 +14,22 @@ import tensorflow as tf
 def main(args,
          train_steps=2500,
          update_epochs=10,
-         num_minibatches=8,
+         num_minibatches=4,
          learning_rate=0.00042,
          entropy_discount=0.001,
          value_discount=0.5,
          epsilon=0.1,
-         num_steps=601,
-         num_envs=16,
+         num_steps=301,
+         num_envs=12,
          num_actions=4,
          stack_size=1,
-         actor_fc=[256],
-         critic_fc=[256],
-         before_fc=[512],
+         actor_fc=[128],
+         critic_fc=[128],
+         before_fc=[256],
          lstm_size=256,
          conv_size="quake",
          logging_period=1,
-         checkpoint_period=10):
+         checkpoint_period=50):
 
     '''
     Train a PPO agent
@@ -105,6 +105,7 @@ def main(args,
                      checkpoint_period=checkpoint_period,
                      output_dir=args.output_dir,
                      restore_dir=args.restore,
+                     restore_cnn_dir=args.restore_cnn,
                      wandb=wandb)
     print("Agent built!")
 
@@ -124,6 +125,10 @@ if __name__ == '__main__':
     # File path arguments
     parser.add_argument(
         '--restore',
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--restore-cnn',
         type=str,
         default=None)
     parser.add_argument(

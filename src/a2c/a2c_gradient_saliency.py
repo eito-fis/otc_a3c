@@ -52,6 +52,7 @@ if __name__ == '__main__':
     parser.add_argument('--memory-path', required=True, help='path to saved memory object file')
     parser.add_argument('--output-dir', default='a2c_saliency', help='name of the video file')
     parser.add_argument('--restore', type=str, default=None, help='path to saved model')
+    parser.add_argument('--smooth', default=False, action='store_true')
     args = parser.parse_args()
 
     #LOAD FILE#
@@ -94,22 +95,24 @@ if __name__ == '__main__':
     output_path = args.output_dir
     os.makedirs(output_path, exist_ok=True)
 
-    stdev = 0.01 * (np.amax(obs) - np.amin(obs))
     states = memory.states
     actions = [a[0] for a in memory.actions]
     total_gradients = np.zeros_like(obs)
     if args.smooth:
-        n_samples = 25
+        n_samples = 200
     else:
         n_samples = 1
-    magnitude = False
+    magnitude = True
 
     # Make gradient
+    print("Gradient Start!")
     for _ in range(n_samples):
         processed = model.process_inputs(states)
         if args.smooth:
-            noise = np.random.normal(0, stdev, obs.shape)
-            processed[0] = processed[0] + noise
+            for i, ob in enumerate(obs):
+                stdev = 0.01 * (np.amax(ob) - np.amin(ob))
+                noise = np.random.normal(0, stdev, ob.shape)
+                processed[0][i] = processed[0][i] + noise
         with tf.GradientTape() as g:
             processed_state = tf.convert_to_tensor(processed[0], dtype=tf.float32)
             g.watch(processed_state)
@@ -122,9 +125,10 @@ if __name__ == '__main__':
             action_logits = [t[a] for t,a in zip(logits, actions)]
         saliencies = np.square(np.squeeze(g.gradient(action_logits, processed_state).numpy()))
         if magnitude:
-            total_gradients += (saliencies * saliencies)
+            total_gradients += np.abs(saliencies)
         else:
             total_gradients += saliencies
+    print("Gradient End!")
 
     for index, saliency in enumerate(total_gradients):
         # Make gray image

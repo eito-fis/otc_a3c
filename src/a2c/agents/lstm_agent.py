@@ -8,6 +8,7 @@ import tensorflow as tf
 
 from src.a2c.envs.parallel_env import ParallelEnv
 from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
+from src.a2c.models.actor_critic_model import ActorCriticModel
 from src.a2c.runners.lstm_runner import LSTMRunner
 
 class LSTMAgent():
@@ -51,6 +52,7 @@ class LSTMAgent():
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
                  restore_dir=None,
+                 restore_cnn_dir=None,
                  wandb=None,
                  build=True):
 
@@ -109,11 +111,14 @@ class LSTMAgent():
                                               num_envs=self.env.num_envs,
                                               actor_fc=actor_fc,
                                               critic_fc=critic_fc,
+                                              conv_size=conv_size,
                                               before_fc=before_fc,
                                               lstm_size=lstm_size,
                                               retro=retro)
             if restore_dir != None:
                 self.model.load_weights(restore_dir)
+            elif restore_cnn_dir != None:
+                self.restore_cnn(restore_cnn_dir, retro)
             
             # Build runner
             self.runner = LSTMRunner(env=self.env,
@@ -282,6 +287,22 @@ class LSTMAgent():
         env_variance = np.var(y_true)
         explained_variance = np.nan if env_variance == 0 else 1 - np.var(y_true - y_pred) / env_variance
         return explained_variance, env_variance
+
+    def restore_cnn(self, restore_cnn_dir, retro):
+        restore_model = ActorCriticModel(num_actions=self.model.num_actions,
+                                         state_size=self.env.state_size,
+                                         stack_size=self.env.stack_size,
+                                         actor_fc=[512],
+                                         critic_fc=[512],
+                                         conv_size = "quake",
+                                         retro=retro)
+        restore_model.load_weights(restore_cnn_dir)
+        restore_cnn = restore_model.layers[0]
+        load_cnn = self.model.layers[0]
+        for restore_layer,load_layer in zip(restore_cnn.layers, load_cnn.layers):
+            load_layer.set_weights(restore_layer.get_weights())
+        print("CNN Layer restored!")
+
 
 
 
