@@ -180,7 +180,7 @@ class WrappedObstacleTowerEnv():
             self.current_reward += reward
         self.total_reward += reward
         
-        if done and reward < 0.95:
+        if (done and reward < 0.95) or self.current_floor == 11:
             # Save info and reset when an episode ends
             info["episode_info"] = {"floor": self.current_floor, "total_reward": self.total_reward}
             ret_state, _ = self.reset()
