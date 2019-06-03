@@ -113,15 +113,18 @@ class LSTMActorCriticModel(tf.keras.models.Model):
         self.value = layers.Dense(1, name='value')
 
         # Take a step with random input to build the model
-        self.step(np.random.random((num_envs,) + tuple(self.state_size)).astype(np.float32),
+                            
+        self.step([(np.random.random(tuple(self.state_size)).astype(np.float32),
+                  np.random.random((max_floor + 1,)).astype(np.float32)) for _ in range(self.num_envs)],
                   np.zeros((num_envs, lstm_size * 2)).astype(np.float32),
                   np.zeros((num_envs,)).astype(np.float32))
 
     def call(self, inputs):
-        obs, cell_state_hidden, reset_mask = inputs
+        all_obs, cell_state_hidden, reset_mask = inputs
+        image_obs, data_obs = all_obs
 
         if self.convs:
-            conv_x = self.convs(obs)
+            conv_x = self.convs(image_obs)
             before_x = self.flatten(conv_x)
         else:
             before_x = obs
@@ -138,7 +141,7 @@ class LSTMActorCriticModel(tf.keras.models.Model):
             actor_x = l(actor_x)
         logits = self.actor_logits(actor_x)
 
-        critic_x = lstm_x
+        critic_x = layers.concatenate([lstm_x, data_obs])
         for l in self.critic_fc:
             critic_x = l(critic_x)
         value = self.value(critic_x)
@@ -170,12 +173,15 @@ class LSTMActorCriticModel(tf.keras.models.Model):
 
         return values.numpy()
 
-    def process_inputs(self, inputs):
+    def process_inputs(self, inputs, multi_input=True):
         '''
         Convert n_envs x n_inputs list to n_inputs x n_envs list if we have
-        multiple inputs
+        multiple inputs, otherwise just convert to array
         '''
-        inputs = np.array([l for l in inputs])
+        if multi_input:
+            inputs = [np.asarray(l) for l in zip(*inputs)]
+        else:
+            inputs = np.array([l for l in inputs])
         return inputs
 
     def batch_to_seq(self, tensor_batch, flat=False):

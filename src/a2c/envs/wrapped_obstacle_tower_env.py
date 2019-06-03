@@ -157,6 +157,10 @@ class WrappedObstacleTowerEnv():
                 action = 30
             elif action == 3: # jump forward
                 action = 21
+            elif action == 4:
+                action = 6
+            elif action == 5:
+                action = 12
         else:
             if action == 0: # forward
                 action = [1, 0, 0, 0]

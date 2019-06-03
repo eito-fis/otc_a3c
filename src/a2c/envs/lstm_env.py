@@ -45,15 +45,15 @@ class LSTMEnv(WrappedObstacleTowerEnv):
     def reset(self):
         ret_state, info = super().reset()
 
-        ret_state = ret_state[0]
+        #ret_state = ret_state[0]
 
         return ret_state, info
 
     def step(self, action):
         ret_state, reward, done, info = super().step(action)
 
-        if not "episode_info" in info:
-            ret_state = ret_state[0]
+        #if not "episode_info" in info:
+        #    ret_state = ret_state[0]
         done = np.float32(done)
 
         return ret_state, reward, done, info
