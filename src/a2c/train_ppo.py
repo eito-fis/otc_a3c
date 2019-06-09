@@ -19,9 +19,9 @@ def main(args,
          value_discount=0.5,
          epsilon=0.1,
          num_steps=650,
-         num_envs=4,
+         num_envs=12,
          num_actions=4,
-         stack_size=2,
+         stack_size=1,
          actor_fc=[512],
          critic_fc=[512],
          conv_size="quake",
@@ -100,6 +100,7 @@ def main(args,
                      checkpoint_period=checkpoint_period,
                      output_dir=args.output_dir,
                      restore_dir=args.restore,
+                     restore_cnn_dir=args.restore_cnn,
                      wandb=wandb)
     print("Agent built!")
 
@@ -119,6 +120,10 @@ if __name__ == '__main__':
     # File path arguments
     parser.add_argument(
         '--restore',
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--restore-cnn',
         type=str,
         default=None)
     parser.add_argument(

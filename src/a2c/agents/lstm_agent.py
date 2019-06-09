@@ -288,20 +288,6 @@ class LSTMAgent():
         explained_variance = np.nan if env_variance == 0 else 1 - np.var(y_true - y_pred) / env_variance
         return explained_variance, env_variance
 
-    def restore_cnn(self, restore_cnn_dir, retro):
-        restore_model = ActorCriticModel(num_actions=self.model.num_actions,
-                                         state_size=self.env.state_size,
-                                         stack_size=self.env.stack_size,
-                                         actor_fc=[512],
-                                         critic_fc=[512],
-                                         conv_size = "quake",
-                                         retro=retro)
-        restore_model.load_weights(restore_cnn_dir)
-        restore_cnn = restore_model.layers[0]
-        load_cnn = self.model.layers[0]
-        for restore_layer,load_layer in zip(restore_cnn.layers, load_cnn.layers):
-            load_layer.set_weights(restore_layer.get_weights())
-        print("CNN Layer restored!")
 
 
 
