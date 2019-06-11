@@ -8,9 +8,9 @@ import numpy as np
 from src.a2c.envs.parallel_env import ParallelEnv
 from src.a2c.agents.ppo_agent import PPOAgent
 
-class LSTMAgent(PPOAgent):
+class LSTMAgent():
     '''
-    LSTM Agent class. Trains the model
+    PPO Agent class. Trains the model
 
     train_steps: Number of episodes to play and train on
     update_epochs: Number of update epochs to run per train step

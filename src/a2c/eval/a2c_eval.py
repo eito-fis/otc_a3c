@@ -35,8 +35,8 @@ class Memory:
         self.actions = []
         self.rewards = []
         self.floor = []
-        self.obs = []
         self.probs = []
+        self.values = []
 
     def store(self, state, action, reward, floor):
         self.states.append(state)
@@ -49,8 +49,8 @@ class Memory:
         self.actions = []
         self.rewards = []
         self.floor = []
-        self.obs = []
         self.probs = []
+        self.values = []
 
 class A2C_Eval():
     def __init__(self,
@@ -72,7 +72,7 @@ class A2C_Eval():
         current_episode = 0
         while current_episode < self.max_episodes:
             seed = np.random.randint(0, 100)
-            # seed = 50
+            # seed = 56
             self.env._obstacle_tower_env.seed(seed)
             # floor = np.random.randint(0, self.max_floor)
             floor = 0
@@ -81,26 +81,27 @@ class A2C_Eval():
             mem.clear()
 
             time_count = 0
+            reward = 0
             total_reward = 0
             done = False
             passed = 0
-            while not done or (done and reward > 0.95):
-                action, value, _ = self.model.step([state])
-                #inputs = self.model.process_inputs([state])
-                #logits, value = self.model.predict(inputs)
-                #logits = tf.nn.softmax(logits)
-                #if (thresh != None) and (np.amax(logits) >= thresh):
-                #    action = np.argmax(logits)
-                #else:
-                #    action = tf.squeeze(tf.random.categorical(logits), axis=-1).numpy()
+            while not done or (done and reward > .95):
+                inputs = model.process_inputs([state])
+                logits, value = model.predict(inputs)
+                probs = tf.nn.softmax(logits)
+                action = tf.squeeze(tf.random.categorical(logits, 1), axis=-1).numpy()
 
                 new_state, reward, done, _ = self.env.step(action)
 
                 total_reward += reward
                 if self.memory_dir is not None:
                     mem.store(state, action, reward, floor)
+                    mem.probs.append(probs)
+                    mem.values.append(value)
                 if reward > .95:
                     passed = 1
+                    # break
+                    floor += 1
 
                 time_count += 1
                 state = new_state
@@ -116,9 +117,9 @@ class A2C_Eval():
 
             if self.memory_dir:
                 if passed: 
-                    output_filepath = os.path.join(self.memory_dir, "pass_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
+                    output_filepath = os.path.join(self.memory_dir, "pass_floor{}_seed{}_steps{}_episode{}".format(floor, seed, time_count, current_episode))
                 else:
-                    output_filepath = os.path.join(self.memory_dir, "fail_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
+                    output_filepath = os.path.join(self.memory_dir, "fail_floor{}_seed{}_steps{}_episode{}".format(floor, seed, time_count, current_episode))
                 os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
                 print("Saving memory to output file path {}".format(output_filepath))
                 output_file = open(output_filepath, 'wb+')
@@ -142,17 +143,17 @@ if __name__ == '__main__':
                                   worker_id=0,
                                   mobilenet=args.mobilenet,
                                   gray_scale=args.gray,
-                                  realtime_mode=args.render,
-                                  retro=True)
+                                  retro=True,
+                                  realtime_mode=args.render)
 
     #BUILD MODEL#
     print("Building model...")
     model = ActorCriticModel(num_actions=6,
-                             state_size=[84,84,3],
-                             stack_size=1,
-                             actor_fc=[512],
-                             critic_fc=[512],
-                             conv_size="quake")
+                             state_size=env.state_size,
+                             stack_size=env.stack_size,
+                             actor_fc=(512,),
+                             critic_fc=(512,),
+                             conv_size='quake')
     if args.restore is not None:
         model.load_weights(args.restore)
     print("Model built!")
