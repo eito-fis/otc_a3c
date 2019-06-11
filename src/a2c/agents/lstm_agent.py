@@ -8,7 +8,7 @@ import numpy as np
 from src.a2c.envs.parallel_env import ParallelEnv
 from src.a2c.agents.ppo_agent import PPOAgent
 
-class LSTMAgent():
+class LSTMAgent(PPOAgent):
     '''
     PPO Agent class. Trains the model
 
