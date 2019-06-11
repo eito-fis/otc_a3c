@@ -85,16 +85,14 @@ class A2C_Eval():
             done = False
             passed = 0
             while not done or (done and reward > 0.95):
-                #action, value, _ = self.model.step([state])
-                inputs = self.model.process_inputs([state])
-                logits, value = self.model.predict(inputs)
-                logits = tf.nn.softmax(logits)
-                if (thresh != None) and (np.amax(logits) >= thresh):
-                    action = np.argmax(logits)
-                else:
-                    action = tf.squeeze(tf.random.categorical(logits, 1), axis=-1).numpy()
-
-                action = np.argmax(logits)
+                action, value, _ = self.model.step([state])
+                #inputs = self.model.process_inputs([state])
+                #logits, value = self.model.predict(inputs)
+                #logits = tf.nn.softmax(logits)
+                #if (thresh != None) and (np.amax(logits) >= thresh):
+                #    action = np.argmax(logits)
+                #else:
+                #    action = tf.squeeze(tf.random.categorical(logits), axis=-1).numpy()
 
                 new_state, reward, done, _ = self.env.step(action)
 
@@ -165,4 +163,4 @@ if __name__ == '__main__':
                      memory_dir=args.memory_dir,
                      max_episodes=1000,
                      max_floor=11)
-    agent.run(thresh=0.8)
+    agent.run()
