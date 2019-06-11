@@ -3,28 +3,7 @@ import numpy as np
 from obstacle_tower_env import ObstacleTowerEnv
 from obstacle_tower_env import ActionFlattener
 
-import tensorflow as tf
-import tensorflow_hub as hub
-
 from PIL import Image
-
-class WrappedKerasLayer(tf.keras.layers.Layer):
-    def __init__(self, retro, mobilenet):
-        super(WrappedKerasLayer, self).__init__()
-        self.layer = hub.KerasLayer("https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2",
-                                    output_shape=[1280],
-                                    trainable=False)
-        if mobilenet:
-            self.input_spec = (1, 224, 224, 3)
-        else:
-            self.input_spec = (1, 84, 84, 3) if retro == True else (1, 168, 168, 3)
-
-    def __call__(self, _input):
-        _input = np.reshape(np.array(_input), self.input_spec)
-        _input = tf.convert_to_tensor(_input, dtype=tf.float32)
-        tensor_var = tf.convert_to_tensor(np.array(self.layer(_input)))
-        tensor_var = tf.squeeze(tensor_var)
-        return tensor_var
 
 class WrappedObstacleTowerEnv():
 
@@ -69,7 +48,6 @@ class WrappedObstacleTowerEnv():
         self.gray_scale = gray_scale
         self.retro = retro
         if mobilenet:
-            self.mobilenet = WrappedKerasLayer(retro, self.mobilenet)
             self.state_size = [1280]
         elif gray_scale:
             self.state_size = [84, 84, 1]
@@ -108,8 +86,9 @@ class WrappedObstacleTowerEnv():
     def reset(self):
         # Reset env, stack and floor
         # (We save state as an attribute so child objects can access it)
-        config = {"total-floors": 11}
+        config = {"total-floors": 15}
         self.state = self._obstacle_tower_env.reset(config)
+        self.state, reward, done, info = self._obstacle_tower_env.step(18)
         self.current_floor = self.start_floor
         self.stack = [np.random.random(self.state_size).astype(np.float32) for _ in range(self.stack_size)]
         self.total_reward = 0
@@ -129,7 +108,9 @@ class WrappedObstacleTowerEnv():
         self.stack = self.stack[1:] + [observation]
 
         # Build our state (MUST BE A TUPLE)
-        one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
+        #one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
+        one_hot_floor = np.zeros(self.max_floor)
+        one_hot_floor[self.current_floor] += 1
         floor_data = np.append(one_hot_floor, self.current_reward).astype(np.float32)
         stacked_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
         if self.retro is True:
@@ -140,9 +121,6 @@ class WrappedObstacleTowerEnv():
             key_time_data = np.array([key, time]).astype(np.float32)
             #key_time_data = np.array([key]).astype(np.float32)
             ret_state = (stacked_state, floor_data, key_time_data)
-
-        # Empty info dict for any children to add to
-        info = {}
 
         return ret_state, info
 
@@ -184,7 +162,7 @@ class WrappedObstacleTowerEnv():
             self.current_reward += reward
         self.total_reward += reward
         
-        if (done and reward < 0.95) or self.current_floor == 11:
+        if (done and reward < 0.95) or self.current_floor == 15:
             # Save info and reset when an episode ends
             info["episode_info"] = {"floor": self.current_floor, "total_reward": self.total_reward}
             ret_state, _ = self.reset()
@@ -203,7 +181,9 @@ class WrappedObstacleTowerEnv():
             self.stack = self.stack[1:] + [observation]
 
             # Build our state (MUST BE A TUPLE)
-            one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
+            #one_hot_floor = tf.one_hot(self.current_floor, self.max_floor).numpy()
+            one_hot_floor = np.zeros(self.max_floor)
+            one_hot_floor[self.current_floor] += 1
             floor_data = np.append(one_hot_floor, self.current_reward).astype(np.float32)
             stacked_state = np.concatenate(self.stack, axis=-1).astype(np.float32)
             if self.retro is True:

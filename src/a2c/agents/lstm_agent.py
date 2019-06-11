@@ -4,12 +4,8 @@ from tqdm import tqdm
 from collections import deque
 
 import numpy as np
-import tensorflow as tf
 
 from src.a2c.envs.parallel_env import ParallelEnv
-from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
-from src.a2c.models.actor_critic_model import ActorCriticModel
-from src.a2c.runners.lstm_runner import LSTMRunner
 from src.a2c.agents.ppo_agent import PPOAgent
 
 class LSTMAgent(PPOAgent):
@@ -57,6 +53,12 @@ class LSTMAgent(PPOAgent):
                  wandb=None,
                  build=True):
 
+        # Build environment
+        env_func_list = [env_func for _ in range(num_envs)]
+        self.env = ParallelEnv(env_func_list)
+
+        import tensorflow as tf
+
         # Build optimizer
         self.opt = tf.optimizers.Adam(learning_rate)
 
@@ -100,9 +102,9 @@ class LSTMAgent(PPOAgent):
             self.wandb = None
 
         if build:
-            # Build environment
-            env_func_list = [env_func for _ in range(num_envs)]
-            self.env = ParallelEnv(env_func_list)
+            from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
+            from src.a2c.models.actor_critic_model import ActorCriticModel
+            from src.a2c.runners.lstm_runner import LSTMRunner
 
             # Build model
             self.model = LSTMActorCriticModel(num_actions=num_actions,
