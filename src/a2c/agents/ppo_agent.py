@@ -124,6 +124,7 @@ class PPOAgent():
                                      num_steps=num_steps)
 
     def train(self):
+        import tensorflow as tf
         for i in range(self.train_steps):
             print("\nStarting training step {}...\n".format(i))
 

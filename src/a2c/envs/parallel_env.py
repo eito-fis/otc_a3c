@@ -80,8 +80,9 @@ class ParallelEnv():
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
         # Get env state size
-        self.remotes[0].send(('get_size', None))
-        self.state_size, self.stack_size = self.remotes[0].recv()
+        for remote in self.remotes:
+            remote.send(('get_size', None))
+            self.state_size, self.stack_size = remote.recv()
 
     def step(self, actions):
         # Send each environment it's action...
