@@ -10,10 +10,11 @@ from src.a2c.envs.parallel_env import ParallelEnv
 from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
 from src.a2c.models.actor_critic_model import ActorCriticModel
 from src.a2c.runners.lstm_runner import LSTMRunner
+from src.a2c.agents.ppo_agent import PPOAgent
 
-class LSTMAgent():
+class LSTMAgent(PPOAgent):
     '''
-    PPO Agent class. Trains the model
+    LSTM Agent class. Trains the model
 
     train_steps: Number of episodes to play and train on
     update_epochs: Number of update epochs to run per train step

@@ -61,13 +61,12 @@ class A2C_Eval():
                 max_floor=5):
         self.env = env
         self.model = model
-        self.state = self.env.reset()
         self.memory_dir = memory_dir
         self.max_episodes = max_episodes
         self.max_floor = max_floor
         self.all_floors = np.array([[0,0] for _ in range(self.max_floor)])
 
-    def run(self):
+    def run(self, thresh=None):
         mem = Memory()
 
         current_episode = 0
@@ -78,18 +77,24 @@ class A2C_Eval():
             # floor = np.random.randint(0, self.max_floor)
             floor = 0
             self.env.floor(floor)
-            state = self.env.reset()
+            state, _ = self.env.reset()
             mem.clear()
 
             time_count = 0
             total_reward = 0
             done = False
             passed = 0
-            while not done:
-                action, value, _ = self.model.step([state])
-                # inputs = self.model.process_inputs([state])
-                # logits, value = self.model.predict(inputs)
-                # action = np.argmax(logits)
+            while not done or (done and reward > 0.95):
+                #action, value, _ = self.model.step([state])
+                inputs = self.model.process_inputs([state])
+                logits, value = self.model.predict(inputs)
+                logits = tf.nn.softmax(logits)
+                if (thresh != None) and (np.amax(logits) >= thresh):
+                    action = np.argmax(logits)
+                else:
+                    action = tf.squeeze(tf.random.categorical(logits, 1), axis=-1).numpy()
+
+                action = np.argmax(logits)
 
                 new_state, reward, done, _ = self.env.step(action)
 
@@ -98,7 +103,6 @@ class A2C_Eval():
                     mem.store(state, action, reward, floor)
                 if reward > .95:
                     passed = 1
-                    break
 
                 time_count += 1
                 state = new_state
@@ -136,20 +140,21 @@ if __name__ == '__main__':
 
     #INITIALIZE ENVIRONMENT#
     env = WrappedObstacleTowerEnv(args.env_filename,
-                                  stack_size=2,
+                                  stack_size=1,
                                   worker_id=0,
                                   mobilenet=args.mobilenet,
                                   gray_scale=args.gray,
-                                  realtime_mode=args.render)
+                                  realtime_mode=args.render,
+                                  retro=True)
 
     #BUILD MODEL#
     print("Building model...")
-    model = ActorCriticModel(num_actions=4,
+    model = ActorCriticModel(num_actions=6,
                              state_size=[84,84,3],
-                             stack_size=2,
-                             actor_fc=(1024,512),
-                             critic_fc=(1024,512),
-                             conv_size=((8,4,16),(4,2,32),(3,1,64)))
+                             stack_size=1,
+                             actor_fc=[512],
+                             critic_fc=[512],
+                             conv_size="quake")
     if args.restore is not None:
         model.load_weights(args.restore)
     print("Model built!")
@@ -159,5 +164,5 @@ if __name__ == '__main__':
                      model=model,
                      memory_dir=args.memory_dir,
                      max_episodes=1000,
-                     max_floor=5)
-    agent.run()
+                     max_floor=11)
+    agent.run(thresh=0.8)
