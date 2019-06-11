@@ -61,13 +61,12 @@ class A2C_Eval():
                 max_floor=5):
         self.env = env
         self.model = model
-        self.state = self.env.reset()
         self.memory_dir = memory_dir
         self.max_episodes = max_episodes
         self.max_floor = max_floor
         self.all_floors = np.array([[0,0] for _ in range(self.max_floor)])
 
-    def run(self):
+    def run(self, thresh=None):
         mem = Memory()
 
         current_episode = 0
@@ -82,10 +81,10 @@ class A2C_Eval():
             mem.clear()
 
             time_count = 0
+            reward = 0
             total_reward = 0
             done = False
             passed = 0
-            reward = 0
             while not done or (done and reward > .95):
                 inputs = model.process_inputs([state])
                 logits, value = model.predict(inputs)
