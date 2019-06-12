@@ -79,7 +79,7 @@ def main(args,
                        gray_scale=args.gray,
                        realtime_mode=args.render,
                        retro=args.retro)
-    env_func_list = [env_func(i) for i in range(num_envs)]
+    env_func_list = [env_func for _ in range(num_envs)]
     env = ParallelEnv(env_func_list)
 
     print("Building agent...")
