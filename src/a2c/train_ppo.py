@@ -5,10 +5,9 @@ import logging
 import argparse
 
 from src.a2c.envs.wrapped_obstacle_tower_env import WrappedObstacleTowerEnv
-from src.a2c.agents.ppo_agent import PPOAgent
+from src.a2c.envs.parallel_env import ParallelEnv
 
 import numpy as np
-import tensorflow as tf
 
 def main(args,
          train_steps=2500,
@@ -78,8 +77,11 @@ def main(args,
                                        gray_scale=args.gray,
                                        realtime_mode=args.render,
                                        retro=args.retro)
+    env_func_list = [env_func for _ in range(num_envs)]
+    env = ParallelEnv(env_func_list)
 
     print("Building agent...")
+    from src.a2c.agents.ppo_agent import PPOAgent
     agent = PPOAgent(train_steps=train_steps,
                      update_epochs=update_epochs,
                      num_minibatches=num_minibatches,
@@ -88,7 +90,7 @@ def main(args,
                      value_discount=value_discount,
                      epsilon=epsilon,
                      num_steps=num_steps,
-                     env_func=env_func,
+                     env=env,
                      num_envs=num_envs,
                      num_actions=num_actions,
                      actor_fc=actor_fc,

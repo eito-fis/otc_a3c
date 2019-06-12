@@ -3,9 +3,13 @@ import os
 from tqdm import tqdm
 from collections import deque
 
+import tensorflow as tf
 import numpy as np
 
 from src.a2c.envs.parallel_env import ParallelEnv
+from src.a2c.models.actor_critic_model import ActorCriticModel
+from src.a2c.runners.runner import Runner
+from src.a2c.runners.gae_runner import GAE_Runner
 
 class PPOAgent():
     '''
@@ -34,7 +38,7 @@ class PPOAgent():
                  value_discount=0.5,
                  epsilon=0.2,
                  num_steps=None,
-                 env_func=None,
+                 env=None,
                  num_envs=None,
                  num_actions=None,
                  actor_fc=None,
@@ -49,12 +53,8 @@ class PPOAgent():
                  restore_cnn_dir=None,
                  wandb=None,
                  build=True):
-
-        # Build environment
-        env_func_list = [env_func for _ in range(num_envs)]
-        self.env = ParallelEnv(env_func_list)
-
-        import tensorflow as tf
+        # Setup env
+        self.env = env
 
         # Build optimizer
         self.opt = tf.optimizers.Adam(learning_rate)
@@ -96,10 +96,6 @@ class PPOAgent():
             self.wandb = None
 
         if build:
-            from src.a2c.models.actor_critic_model import ActorCriticModel
-            from src.a2c.runners.runner import Runner
-            from src.a2c.runners.gae_runner import GAE_Runner
-
             # Build model
             self.model = ActorCriticModel(num_actions=num_actions,
                                           state_size=self.env.state_size,
@@ -124,7 +120,6 @@ class PPOAgent():
                                      num_steps=num_steps)
 
     def train(self):
-        import tensorflow as tf
         for i in range(self.train_steps):
             print("\nStarting training step {}...\n".format(i))
 
