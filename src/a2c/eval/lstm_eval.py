@@ -168,5 +168,5 @@ if __name__ == '__main__':
                      model=model,
                      memory_dir=args.memory_dir,
                      max_episodes=1000,
-                     max_floor=11)
+                     max_floor=1)
     agent.run()

@@ -39,7 +39,7 @@ class PrierarchyAgent(LSTMAgent):
                  value_discount=0.5,
                  epsilon=0.2,
                  num_steps=None,
-                 env_func=None,
+                 env=None,
                  num_envs=None,
                  num_actions=None,
                  actor_fc=None,
@@ -65,7 +65,7 @@ class PrierarchyAgent(LSTMAgent):
                          value_discount=value_discount,
                          epsilon=epsilon,
                          num_steps=num_steps,
-                         env_func=env_func,
+                         env=env,
                          num_envs=num_envs,
                          num_actions=num_actions,
                          actor_fc=actor_fc,
@@ -83,21 +83,23 @@ class PrierarchyAgent(LSTMAgent):
                          wandb=wandb,
                          build=False)
         self.kl_discount = kl_discount
+        self.small_value = 0.0000001
+        self.prior_states = np.zeros((env.num_envs, lstm_size * 2)).astype(np.float32)
         if build:
             if prior_dir == None:
                 raise ValueError('Weights for the prior must be specified')
 
-            # Build environment
-            env_func_list = [env_func for _ in range(num_envs)]
-            self.env = ParallelEnv(env_func_list)
-
-            self.prior = ActorCriticModel(num_actions=4,
-                                          state_size=self.env.state_size,
-                                          stack_size=self.env.stack_size,
-                                          actor_fc=[512],
-                                          critic_fc=[512],
-                                          conv_size="quake",
-                                          retro=True)
+            self.prior = LSTMActorCriticModel(num_actions=num_actions,
+                                              state_size=self.env.state_size,
+                                              stack_size=self.env.stack_size,
+                                              num_steps=num_steps,
+                                              num_envs=self.env.num_envs,
+                                              actor_fc=actor_fc,
+                                              critic_fc=critic_fc,
+                                              conv_size=conv_size,
+                                              before_fc=before_fc,
+                                              lstm_size=lstm_size,
+                                              retro=retro)
             self.prior.load_weights(prior_dir)
 
             # Build model
@@ -131,6 +133,7 @@ class PrierarchyAgent(LSTMAgent):
             assert self.num_envs % self.num_minibatches == 0
             env_indicies = np.arange(self.num_envs)
             flat_indicies = np.arange(self.b_size).reshape(self.num_envs, self.num_steps)
+            new_prior_states = np.zeros((self.env.num_envs, self.model.lstm_size * 2)).astype(np.float32)
             # Generate a batch from one rollout
             b_obs, b_rewards, b_dones, b_actions, b_values, b_probs, b_states, true_reward, ep_infos = self.runner.generate_batch()
             
@@ -151,6 +154,7 @@ class PrierarchyAgent(LSTMAgent):
                             (arr[mb_flat_inds] for arr in (b_obs, b_rewards, b_dones,
                                                           b_actions, b_values, b_probs))
                     mb_states = b_states[mb_env_inds]
+                    mb_prior_states = self.prior_states[mb_env_inds]
                     # Calculate advantages
                     advs = mb_rewards - mb_values
 
@@ -177,18 +181,20 @@ class PrierarchyAgent(LSTMAgent):
                                                                 clipped_policy_loss))
 
                         # Calculate our KL divergence relative to the prior
-                        prior_logits, _ = self.prior(mb_obs)
+                        prior_logits, _, mb_new_prior_states = self.prior([mb_obs, mb_prior_states, mb_dones])
+                        if end == self.num_envs:
+                            new_prior_states[mb_env_inds] = mb_new_prior_states.numpy()
                         prior_logits = tf.nn.softmax(prior_logits)
                         kl_loss = tf.reduce_mean(prior_logits *
-                                                 tf.math.log(prior_logits / logits)) * -1
+                                                 tf.math.log(prior_logits / (logits + self.small_value) + self.small_value))
 
                         # Calculate our value loss
                         mse = tf.keras.losses.MeanSquaredError()
                         value_loss = mse(mb_rewards[:, None], values)
 
                         total_loss = policy_loss + \
-                                     (kl_loss * self.kl_discount) + \
-                                     (value_loss * self.value_discount)
+                                     (value_loss * self.value_discount) + \
+                                     -(kl_loss * self.kl_discount)
 
                     # Calculate and apply gradient
                     total_grads = tape.gradient(total_loss, self.model.trainable_weights)
@@ -216,6 +222,16 @@ class PrierarchyAgent(LSTMAgent):
             self.log_step(b_rewards, b_values, b_probs, step_policy_loss,
                           step_kl_loss, step_value_loss, epoch_clip_frac,
                           ep_infos, i)
+            self.prior_states = new_prior_states
+
+    def log_epoch(self, e, policy_loss, kl_loss, value_loss, clip_frac):
+        avg_policy_loss = np.mean(policy_loss)
+        avg_kl_loss = np.mean(kl_loss)
+        avg_value_loss = np.mean(value_loss)
+        avg_clip_frac = np.mean(clip_frac)
+
+        print("\t\t| Policy Loss: {} | KL Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_kl_loss, avg_value_loss))
+        print("\t\t| Fraction Clipped: {} |".format(avg_clip_frac))
 
     def log_step(self, rewards, values, probs, policy_loss, kl_loss, value_loss, clip_frac, ep_infos, i):
         # Pull specific info from info array and store in queue
