@@ -106,8 +106,6 @@ def main(args,
                             logging_period=logging_period,
                             checkpoint_period=checkpoint_period,
                             output_dir=args.output_dir,
-                            restore_dir=args.restore,
-                            restore_cnn_dir=args.restore_cnn,
                             prior_dir=args.prior,
                             wandb=wandb)
     print("Agent built!")
@@ -126,14 +124,6 @@ if __name__ == '__main__':
         default='/tmp/ppo')
 
     # File path arguments
-    parser.add_argument(
-        '--restore',
-        type=str,
-        default=None)
-    parser.add_argument(
-        '--restore-cnn',
-        type=str,
-        default=None)
     parser.add_argument(
         '--prior',
         type=str,

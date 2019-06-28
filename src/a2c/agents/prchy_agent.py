@@ -52,8 +52,6 @@ class PrierarchyAgent(LSTMAgent):
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
-                 restore_dir=None,
-                 restore_cnn_dir=None,
                  prior_dir=None,
                  wandb=None,
                  build=True):
@@ -78,8 +76,6 @@ class PrierarchyAgent(LSTMAgent):
                          logging_period=logging_period,
                          checkpoint_period=checkpoint_period,
                          output_dir=output_dir,
-                         restore_dir=restore_dir,
-                         restore_cnn_dir=restore_cnn_dir,
                          wandb=wandb,
                          build=False)
         self.kl_discount = kl_discount
