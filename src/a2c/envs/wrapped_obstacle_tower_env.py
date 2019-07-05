@@ -13,7 +13,7 @@ class WrappedObstacleTowerEnv():
         docker_training=False,
         worker_id=0,
         retro=False,
-        timeout_wait=30,
+        timeout_wait=3000,
         realtime_mode=False,
         num_actions=3,
         stack_size=4,

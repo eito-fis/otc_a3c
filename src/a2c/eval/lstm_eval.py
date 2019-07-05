@@ -31,26 +31,28 @@ def average_level(histogram):
 
 class Memory:
     def __init__(self):
+        self.obs = []
         self.states = []
         self.actions = []
         self.rewards = []
         self.floor = []
-        self.obs = []
         self.probs = []
+        self.dones = []
 
-    def store(self, state, action, reward, floor):
-        self.states.append(state)
+    def store(self, obs, action, reward, done):
+        self.obs.append(obs)
         self.actions.append(action)
         self.rewards.append(reward)
-        self.floor.append(floor)
+        self.dones.append(done)
 
     def clear(self):
+        self.obs = []
         self.states = []
         self.actions = []
         self.rewards = []
         self.floor = []
-        self.obs = []
         self.probs = []
+        self.dones = []
 
 class LSTM_Eval():
     def __init__(self,
@@ -79,7 +81,7 @@ class LSTM_Eval():
             #seed = 56
             self.env._obstacle_tower_env.seed(seed)
             # floor = np.random.randint(0, self.max_floor)
-            floor = 0
+            floor = 5
             self.env.floor(floor)
             mem.clear()
 
@@ -98,7 +100,7 @@ class LSTM_Eval():
 
                 total_reward += reward
                 if self.memory_dir is not None:
-                    mem.store(self.ob, action, reward, floor)
+                    mem.store(self.ob, action, reward, done)
                 if reward > .95:
                     passed = 1
                     floor += 1
