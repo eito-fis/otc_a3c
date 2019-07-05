@@ -8,6 +8,7 @@ import tensorflow as tf
 from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
 
 def imitate(memory_path=None,
+            prior_memory_path=None,
             output_dir=None,
             model=None,
             prior=None,
@@ -20,6 +21,10 @@ def imitate(memory_path=None,
     data_file = open(memory_path, 'rb')
     memory_list = pickle.load(data_file)
     data_file.close()
+
+    data_file = open(prior_memory_path, 'rb')
+    prior_memory_list = pickle.load(data_file)
+    data_file.close()
     print("Loaded files!")
 
     mem_obs, mem_actions, mem_rewards, mem_dones = [], [], [], []
@@ -29,32 +34,47 @@ def imitate(memory_path=None,
         mem_rewards += memory.rewards
         mem_dones += memory.dones
 
+    prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones = [], [], [], []
+    for memory in prior_memory_list:
+        prior_mem_obs += memory.obs
+        prior_mem_actions += memory.actions
+        prior_mem_rewards += memory.rewards
+        prior_mem_dones += memory.dones
+
     # Build generator that spits out sequences
-    def build_gen():
+    def build_gen(g_mem_obs, g_mem_actions, g_mem_rewards, g_mem_dones):
         start = 0
-        l = len(mem_obs)
+        l = len(g_mem_obs)
         while True:
             if start + batch_size >= l:
                 end = batch_size - (l-start)
-                yield (np.asarray(mem_obs[start:l] + mem_obs[0:end]),
-                       np.asarray(mem_actions[start:l] + mem_actions[0:end]),
-                       np.asarray(mem_rewards[start:l] + mem_rewards[0:end]),
-                       np.asarray(mem_dones[start:l] + mem_dones[0:end]))
+                yield (g_mem_obs[start:l] + g_mem_obs[0:end],
+                       g_mem_actions[start:l] + g_mem_actions[0:end],
+                       g_mem_rewards[start:l] + g_mem_rewards[0:end],
+                       g_mem_dones[start:l] + g_mem_dones[0:end])
             else:
                 end = start + batch_size
-                yield (np.asarray(mem_obs[start:end]),
-                       np.asarray(mem_actions[start:end]),
-                       np.asarray(mem_rewards[start:end]),
-                       np.asarray(mem_dones[start:end]))
+                yield (g_mem_obs[start:end],
+                       g_mem_actions[start:end],
+                       g_mem_rewards[start:end],
+                       g_mem_dones[start:end])
             start = end
-    generator = build_gen()
+    imitation_generator = build_gen(mem_obs, mem_actions, mem_rewards, mem_dones)
+    prior_generator = build_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones)
 
     small_value = 0.0000001
-    states = np.zeros((1, model.lstm_size * 2)).astype(np.float32)
-    prior_states = np.zeros((1, model.lstm_size * 2)).astype(np.float32)
+    states = np.zeros((2, model.lstm_size * 2)).astype(np.float32)
+    prior_states = np.zeros((2, model.lstm_size * 2)).astype(np.float32)
     print("Starting steps...")
     for train_step in range(train_steps):
-        obs, actions, rewards, dones  = next(generator)
+        # Combine prior and imitation batches
+        obs, actions, rewards, dones  = next(imitation_generator)
+        p_obs, p_actions, p_rewards, p_dones  = next(prior_generator)
+        obs = np.asarray(obs + p_obs)
+        actions = np.asarray(actions + p_actions)
+        rewards = np.asarray(rewards + p_rewards)
+        dones = np.asarray(dones + p_dones)
+
         obs = model.process_inputs(obs)
         with tf.GradientTape() as tape:
             logits, values, states = model([obs, states, dones])
@@ -62,7 +82,7 @@ def imitate(memory_path=None,
 
             # Calculate cross entropy loss            
             scce = tf.keras.losses.SparseCategoricalCrossentropy()
-            scce_loss = scce(actions, logits)
+            scce_loss = scce(actions[0:batch_size], logits[0:batch_size])
             
             # Calculate KL loss
             prior_logits, _, prior_states = prior([obs, prior_states, dones])
@@ -114,7 +134,7 @@ def main(args,
                                       state_size=[84,84,3],
                                       stack_size=1,
                                       num_steps=num_steps,
-                                      num_envs=1,
+                                      num_envs=2,
                                       actor_fc=actor_fc,
                                       critic_fc=critic_fc,
                                       before_fc=before_fc,
@@ -128,7 +148,7 @@ def main(args,
                                       state_size=[84,84,3],
                                       stack_size=1,
                                       num_steps=num_steps,
-                                      num_envs=1,
+                                      num_envs=2,
                                       actor_fc=actor_fc,
                                       critic_fc=critic_fc,
                                       before_fc=before_fc,
@@ -141,6 +161,7 @@ def main(args,
     os.makedirs(os.path.dirname(args.output_dir), exist_ok=True)
 
     imitate(memory_path=args.memory_path,
+            prior_memory_path=args.prior_memory_path,
             output_dir=args.output_dir,
             model=model,
             prior=prior,
@@ -154,6 +175,7 @@ def main(args,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Prierarchy Imitation Learning')
     parser.add_argument('--memory-path', type=str, default=None)
+    parser.add_argument('--prior-memory-path', type=str, default=None)
     parser.add_argument('--restore', type=str, default=None)
     parser.add_argument('--output-dir', type=str, default='/tmp/prierarchy_imitation')
     args = parser.parse_args()
