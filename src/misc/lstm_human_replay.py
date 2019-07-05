@@ -46,8 +46,8 @@ def run(env, floor, seed):
 
     mem = Memory()
     observation, info = env.reset()
-    done = 1.
-    new_done = 0.
+    done = np.float32(1)
+    new_done = np.float32(0)
     
     while not new_done:
         action = input_action()
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     parser.add_argument('--env-filepath', type=str, default='../ObstacleTower/obstacletower')
     parser.add_argument('--output-filepath', type=str, default='./human_replay/memory_human_replay')
     parser.add_argument('--episodes', type=int, default=50)
-    parser.add_argument('--period', type=int, default=10)
+    parser.add_argument('--period', type=int, default=1)
     parser.add_argument('--floor', type=int, default=10)
     parser.add_argument('--seed', type=int, default=-1)
     parser.add_argument('--concat-dir', type=str, default=None)

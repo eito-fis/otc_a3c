@@ -1,4 +1,3 @@
-
 import os
 import pickle
 import argparse
@@ -50,6 +49,7 @@ def imitate(memory_path=None,
             start = end
     generator = build_gen()
 
+    small_value = 0.0000001
     states = np.zeros((1, model.lstm_size * 2)).astype(np.float32)
     prior_states = np.zeros((1, model.lstm_size * 2)).astype(np.float32)
     print("Starting steps...")
@@ -110,7 +110,7 @@ def main(args,
     if args.memory_path == None:
         raise ValueError('Memory path must be specified')
 
-    self.prior = LSTMActorCriticModel(num_actions=num_actions,
+    prior = LSTMActorCriticModel(num_actions=num_actions,
                                       state_size=[84,84,3],
                                       stack_size=1,
                                       num_steps=num_steps,
@@ -121,10 +121,10 @@ def main(args,
                                       lstm_size=lstm_size,
                                       conv_size=conv_size,
                                       retro=True)
-    self.prior.load_weights(args.restore)
+    prior.load_weights(args.restore)
 
     # Build model
-    self.model = LSTMActorCriticModel(num_actions=num_actions,
+    model = LSTMActorCriticModel(num_actions=num_actions,
                                       state_size=[84,84,3],
                                       stack_size=1,
                                       num_steps=num_steps,
@@ -135,7 +135,7 @@ def main(args,
                                       lstm_size=lstm_size,
                                       conv_size=conv_size,
                                       retro=True)
-    self.model.load_weights(args.restore)
+    model.load_weights(args.restore)
 
     opt = tf.optimizers.Adam(learning_rate)
     os.makedirs(os.path.dirname(args.output_dir), exist_ok=True)
@@ -147,23 +147,15 @@ def main(args,
             opt=opt,
             train_steps=train_steps,
             batch_size=num_steps,
-            kl_reg=kl_reg
+            kl_reg=kl_reg,
             checkpoint_period=checkpoint_period)
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Prierarchy Imitation Learning')
-    parser.add_argument(
-        '--memory-path',
-        type=str,
-        default=None)
-    parser.add_argument(
-        '--restore',
-        type=str,
-        default=None)
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='/tmp/prierarchy_imitation')
+    parser.add_argument('--memory-path', type=str, default=None)
+    parser.add_argument('--restore', type=str, default=None)
+    parser.add_argument('--output-dir', type=str, default='/tmp/prierarchy_imitation')
+    args = parser.parse_args()
 
     main(args)
