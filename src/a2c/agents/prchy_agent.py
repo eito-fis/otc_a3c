@@ -52,8 +52,6 @@ class PrierarchyAgent(LSTMAgent):
                  logging_period=25,
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
-                 restore_dir=None,
-                 restore_cnn_dir=None,
                  prior_dir=None,
                  wandb=None,
                  build=True):
@@ -78,8 +76,6 @@ class PrierarchyAgent(LSTMAgent):
                          logging_period=logging_period,
                          checkpoint_period=checkpoint_period,
                          output_dir=output_dir,
-                         restore_dir=restore_dir,
-                         restore_cnn_dir=restore_cnn_dir,
                          wandb=wandb,
                          build=False)
         self.kl_discount = kl_discount
@@ -128,7 +124,7 @@ class PrierarchyAgent(LSTMAgent):
             print("\nStarting training step {}...\n".format(i))
 
             # Reset step logging
-            step_policy_loss, step_kl_loss, step_value_loss, step_clip_frac = [], [], [], []
+            step_policy_loss, step_kl_loss, step_value_loss, step_entropy_loss, step_clip_frac = [], [], [], [], []
             # Generate indicies for minibatch sampling
             assert self.num_envs % self.num_minibatches == 0
             env_indicies = np.arange(self.num_envs)
@@ -141,7 +137,7 @@ class PrierarchyAgent(LSTMAgent):
             print("\nStarting PPO updates...")
             for e in range(self.update_epochs):
                 # Reset epoch logging
-                epoch_policy_loss, epoch_kl_loss, epoch_value_loss, epoch_clip_frac = [], [], [], []
+                epoch_policy_loss, epoch_kl_loss, epoch_value_loss, epoch_entropy_loss, epoch_clip_frac = [], [], [], [], []
                 # Shuffle indicies
                 np.random.shuffle(env_indicies)
 
@@ -188,13 +184,16 @@ class PrierarchyAgent(LSTMAgent):
                         kl_loss = tf.reduce_mean(prior_logits *
                                                  tf.math.log(prior_logits / (logits + self.small_value) + self.small_value))
 
+                        # Calculate our entropy loss
+                        cce = tf.keras.losses.CategoricalCrossentropy()
+                        entropy_loss = cce(logits, logits) * -1
                         # Calculate our value loss
                         mse = tf.keras.losses.MeanSquaredError()
                         value_loss = mse(mb_rewards[:, None], values)
 
                         total_loss = policy_loss + \
                                      (value_loss * self.value_discount) + \
-                                     -(kl_loss * self.kl_discount)
+                                     (kl_loss * self.kl_discount)
 
                     # Calculate and apply gradient
                     total_grads = tape.gradient(total_loss, self.model.trainable_weights)
@@ -205,6 +204,7 @@ class PrierarchyAgent(LSTMAgent):
                     epoch_policy_loss.append(policy_loss.numpy())
                     epoch_kl_loss.append(kl_loss.numpy())
                     epoch_value_loss.append(value_loss.numpy())
+                    epoch_entropy_loss.append(entropy_loss.numpy())
 
                     # Calculate the fraction of our mini batch that was clipped
                     clips = tf.greater(tf.abs(ratio - 1), self.epsilon)
@@ -212,28 +212,30 @@ class PrierarchyAgent(LSTMAgent):
                     epoch_clip_frac.append(clip_frac)
 
                 # Log epoch data
-                self.log_epoch(e, epoch_policy_loss, epoch_kl_loss, epoch_value_loss, epoch_clip_frac)
+                self.log_epoch(e, epoch_policy_loss, epoch_kl_loss, epoch_value_loss, epoch_clip_frac, epoch_entropy_loss)
                 # Store epoch metrics
                 step_policy_loss.append(np.mean(epoch_policy_loss))
                 step_kl_loss.append(np.mean(epoch_kl_loss))
                 step_value_loss.append(np.mean(epoch_value_loss))
+                step_entropy_loss.append(np.mean(epoch_entropy_loss))
 
             # Log step data
             self.log_step(b_rewards, b_values, b_probs, step_policy_loss,
                           step_kl_loss, step_value_loss, epoch_clip_frac,
-                          ep_infos, i)
+                          epoch_entropy_loss, ep_infos, i)
             self.prior_states = new_prior_states
 
-    def log_epoch(self, e, policy_loss, kl_loss, value_loss, clip_frac):
+    def log_epoch(self, e, policy_loss, kl_loss, value_loss, clip_frac, entropy_loss):
         avg_policy_loss = np.mean(policy_loss)
         avg_kl_loss = np.mean(kl_loss)
         avg_value_loss = np.mean(value_loss)
         avg_clip_frac = np.mean(clip_frac)
+        avg_entropy_loss = np.mean(entropy_loss)
 
         print("\t\t| Policy Loss: {} | KL Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_kl_loss, avg_value_loss))
-        print("\t\t| Fraction Clipped: {} |".format(avg_clip_frac))
+        print("\t\t| Entropy Loss: {} | Fraction Clipped: {} |".format(avg_entropy_loss, avg_clip_frac))
 
-    def log_step(self, rewards, values, probs, policy_loss, kl_loss, value_loss, clip_frac, ep_infos, i):
+    def log_step(self, rewards, values, probs, policy_loss, kl_loss, value_loss, clip_frac, entropy_loss, ep_infos, i):
         # Pull specific info from info array and store in queue
         for info in ep_infos:
             self.floor_queue.append(info["floor"])
@@ -245,12 +247,14 @@ class PrierarchyAgent(LSTMAgent):
         avg_policy_loss = np.mean(policy_loss)
         avg_kl_loss = np.mean(kl_loss)
         avg_value_loss = np.mean(value_loss)
+        avg_entropy_loss = np.mean(entropy_loss)
         avg_clip_frac = np.mean(clip_frac)
         explained_variance, env_variance = self.explained_variance(values, rewards)
 
         print("\nTrain Step Metrics:")
         print("\t| Total Episodes: {} | Average Floor: {} | Average Reward: {} |".format(self.episodes, avg_floor, avg_reward))
         print("\t| Policy Loss: {} | KL Loss: {} | Value Loss: {} |".format(avg_policy_loss, avg_kl_loss, avg_value_loss))
+        print("\t| Entropy Loss: {} | Fraction Clipped: {} |".format(avg_entropy_loss, avg_clip_frac))
         print("\t| Explained Variance: {} | Environment Variance: {} |".format(explained_variance, env_variance))
         print()
 
@@ -270,8 +274,9 @@ class PrierarchyAgent(LSTMAgent):
                                 "Average Reward": avg_reward,
                                 "Average Floor Distribution": self.wandb.Histogram(self.floor_queue, num_bins=25),
                                 "Policy Loss": avg_policy_loss,
-                                "Entropy Loss": avg_kl_loss,
+                                "KL Loss": avg_kl_loss,
                                 "Value Loss": avg_value_loss,
+                                "Entropy Loss": avg_kl_loss,
                                 "Explained Variance": explained_variance,
                                 "Fraction Clipped": avg_clip_frac,
                                 "Probabilities": self.wandb.Histogram(probs, num_bins=10)})
