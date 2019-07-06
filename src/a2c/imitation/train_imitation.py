@@ -89,7 +89,7 @@ def imitate(memory_path=None,
 
             # Calculate cross entropy loss            
             scce = tf.keras.losses.SparseCategoricalCrossentropy()
-            scce_loss = scce(actions, logits, sample_weight=weights)
+            scce_loss = scce(actions[0:batch_size], logits[0:batch_size], sample_weight=weights)
             
             # Calculate KL loss
             prior_logits, _, prior_states = prior([obs, prior_states, dones])
