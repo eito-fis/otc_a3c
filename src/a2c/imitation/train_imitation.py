@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 
 from src.a2c.models.lstm_actor_critic_model import LSTMActorCriticModel
+from src.a2c.eval.lstm_eval import Memory
 
 def imitate(memory_path=None,
             prior_memory_path=None,
@@ -88,7 +89,7 @@ def imitate(memory_path=None,
 
             # Calculate cross entropy loss            
             scce = tf.keras.losses.SparseCategoricalCrossentropy()
-            scce_loss = scce(actions[0:batch_size], logits[0:batch_size], sample_weight=weights)
+            scce_loss = scce(actions, logits, sample_weight=weights)
             
             # Calculate KL loss
             prior_logits, _, prior_states = prior([obs, prior_states, dones])
@@ -120,9 +121,9 @@ def imitate(memory_path=None,
 
 def main(args,
          train_steps=2500,
-         learning_rate=0.00042,
-         kl_reg=0.01,
-         num_steps=40,
+         learning_rate=0.0000042,
+         kl_reg=0.25,
+         num_steps=100,
          num_actions=6,
          stack_size=1,
          actor_fc=[128],

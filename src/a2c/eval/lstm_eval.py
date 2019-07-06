@@ -68,8 +68,8 @@ class LSTM_Eval():
         self.max_floor = max_floor
         self.all_floors = np.array([[0,0] for _ in range(self.max_floor)])
 
-        self.ob, self.info  = self.env.reset()
         self.done = np.zeros((1,)).astype(np.float32)
+        self.done[0] = 1
         self.state = np.zeros((1, model.lstm_size * 2)).astype(np.float32)
 
     def run(self):
@@ -78,37 +78,38 @@ class LSTM_Eval():
         current_episode = 0
         while current_episode < self.max_episodes:
             seed = np.random.randint(0, 100)
-            #seed = 56
             self.env._obstacle_tower_env.seed(seed)
-            # floor = np.random.randint(0, self.max_floor)
-            floor = 5
+            floor = 0 # np.random.randint(0, self.max_floor)
             self.env.floor(floor)
+            self.ob, self.info  = self.env.reset()
+
             mem.clear()
-
             time_count = 0
+            reward = 0
             total_reward = 0
-            done = False
+            new_done = 0
             passed = 0
-            while not done:
+            while not new_done or reward > .95:
                 action, value, prob, self.state = self.model.step(np.asarray([self.ob]), self.state, self.done)
-                # inputs = self.model.process_inputs([state])
-                # logits, value = self.model.predict(inputs)
-                # action = np.argmax(logits)
+                # inputs = self.model.process_inputs(np.asarray([self.ob]))
+                # logits, value, self.state = self.model([inputs, self.state, self.done])
+                # action = np.argmax(tf.squeeze(logits))
 
-                new_ob, reward, self.done, self.info = self.env.step(action)
-                self.done = np.array([self.done])
+                new_ob, reward, new_done, self.info = self.env.step(action)
 
                 total_reward += reward
                 if self.memory_dir is not None:
-                    mem.store(self.ob, action, reward, done)
+                    mem.store(self.ob, action, reward, self.done)
                 if reward > .95:
                     passed = 1
                     floor += 1
+
+                self.ob = new_ob
+                self.done = np.array([new_done])
+                time_count += 1
+
                 if floor == 10:
                     break
-
-                time_count += 1
-                self.ob = new_ob
 
             print("| Episode {} | Seed {} | Floor {} | Steps {} | Reward {} |".format(current_episode, seed, floor, time_count, total_reward))
             self.all_floors[floor,passed] += 1
@@ -116,16 +117,15 @@ class LSTM_Eval():
             print("Floor histogram: {}".format(floor_hist))
             print("Floors overall: {}".format([p + not_p for not_p, p in self.all_floors]))
             average_level(floor_hist)
-
             current_episode += 1
 
-            if self.memory_dir:
-                if passed: 
+            if self.memory_dir is not None:
+                if passed:
                     output_filepath = os.path.join(self.memory_dir, "pass_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
                 else:
                     output_filepath = os.path.join(self.memory_dir, "fail_floor{}_steps{}_episode{}".format(floor, time_count, current_episode))
                 os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
-                print("Saving memory to output file path {}".format(output_filepath))
+                print("Saving memory to output filepath {}".format(output_filepath))
                 output_file = open(output_filepath, 'wb+')
                 pickle.dump(mem, output_file)
 
@@ -170,5 +170,5 @@ if __name__ == '__main__':
                      model=model,
                      memory_dir=args.memory_dir,
                      max_episodes=1000,
-                     max_floor=1)
+                     max_floor=15)
     agent.run()
