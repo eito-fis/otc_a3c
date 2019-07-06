@@ -16,6 +16,7 @@ def imitate(memory_path=None,
             train_steps=1000,
             batch_size=40,
             kl_reg=0.01,
+            num_actions=6,
             checkpoint_period=50):
     # Load human input from pickle file and concatenate together
     data_file = open(memory_path, 'rb')
@@ -33,6 +34,10 @@ def imitate(memory_path=None,
         mem_actions += memory.actions
         mem_rewards += memory.rewards
         mem_dones += memory.dones
+    counts = np.zeros(num_actions)
+    for a in mem_actions:
+        if a < num_actions: counts[a] += 1
+    counts = [(sum(counts) - c) / sum(counts) for c in counts]
 
     prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones = [], [], [], []
     for memory in prior_memory_list:
@@ -69,6 +74,7 @@ def imitate(memory_path=None,
     for train_step in range(train_steps):
         # Combine prior and imitation batches
         obs, actions, rewards, dones  = next(imitation_generator)
+        weights = [counts[action] for action in actions]
         p_obs, p_actions, p_rewards, p_dones  = next(prior_generator)
         obs = np.asarray(obs + p_obs)
         actions = np.asarray(actions + p_actions)
@@ -82,7 +88,7 @@ def imitate(memory_path=None,
 
             # Calculate cross entropy loss            
             scce = tf.keras.losses.SparseCategoricalCrossentropy()
-            scce_loss = scce(actions[0:batch_size], logits[0:batch_size])
+            scce_loss = scce(actions[0:batch_size], logits[0:batch_size], sample_weight=weights)
             
             # Calculate KL loss
             prior_logits, _, prior_states = prior([obs, prior_states, dones])
