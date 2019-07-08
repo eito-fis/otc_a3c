@@ -104,12 +104,21 @@ def imitate(memory_path=None,
         total_grads = tape.gradient(total_loss, model.trainable_weights)
         opt.apply_gradients(zip(total_grads, model.trainable_weights))
 
+        predict_actions = [np.argmax(distribution) for distribution in logits]
+        correct = [1 if t == p else 0 for t, p in zip(actions, predict_actions)]
+        accuracy = sum(correct) / len(correct)
+
         print("Step: {}".format(train_step, total_loss))
         print("Total Loss: {} | SCCE Loss: {} | KL Loss: {}".format(total_loss, scce_loss, kl_loss))
-        if train_step % 10 == 0:
-            predict_actions = [np.argmax(distribution) for distribution in logits]
-            correct = [1 if t == p else 0 for t, p in zip(actions, predict_actions)]
-            print("Accuracy: {}".format(sum(correct) / len(correct)))
+        print("Accuracy: {}".format(accuracy))
+
+        if train_step % logging_period == 0:
+            if self.wandb != None:
+                self.wandb.log({"Train Step": train_step,
+                                "Accuracy": accuracy,
+                                "Total Loss": total_loss,
+                                "SCCE Loss": scce_loss,
+                                "KL Loss": kl_loss})
         if train_step % checkpoint_period == 0:
             _save_path = os.path.join(output_dir, "imitation_model_{}.h5".format(train_step))
             model.save_weights(_save_path)
@@ -171,6 +180,23 @@ def main(args,
     opt = tf.optimizers.Adam(learning_rate)
     os.makedirs(os.path.dirname(args.output_dir), exist_ok=True)
 
+    if args.wandb:
+        import wandb
+        if args.wandb_name != None:
+            wandb.init(name=args.wandb_name,
+                       project="obstacle-tower-challenge-supervised",
+                       entity="42 Robolab")
+        else:
+            wandb.init(project="obstacle-tower-challenge-supervised",
+                       entity="42 Robolab")
+            wandb.config.update({"Human Memory Path": args.memory_path,
+                                 "Prior Memory Path": args.prior_memory_path,
+                                 "Restore": args.restore,
+                                 "Train Steps": train_steps,
+                                 "KL Reg": kl_reg,
+                                 "Checkpoint Period": checkpoint_period})
+    else: wandb = None
+
     imitate(memory_path=args.memory_path,
             prior_memory_path=args.prior_memory_path,
             output_dir=args.output_dir,
@@ -180,7 +206,8 @@ def main(args,
             train_steps=train_steps,
             batch_size=num_steps,
             kl_reg=kl_reg,
-            checkpoint_period=checkpoint_period)
+            checkpoint_period=checkpoint_period,
+            wandb=wandb)
     
 
 if __name__ == '__main__':
@@ -190,6 +217,17 @@ if __name__ == '__main__':
     parser.add_argument('--restore', type=str, default=None)
     parser.add_argument('--prior', type=str, default=None)
     parser.add_argument('--output-dir', type=str, default='/tmp/prierarchy_imitation')
+
+    # Wandb flags
+    parser.add_argument(
+        '--wandb',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--wandb-name',
+        type=str,
+        default=None)
+
     args = parser.parse_args()
 
     main(args)
