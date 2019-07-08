@@ -31,6 +31,7 @@ def imitate(memory_path=None,
 
     mem_obs, mem_actions, mem_rewards, mem_dones = [], [], [], []
     for memory in memory_list:
+        if 6 in memory.actions: continue
         mem_obs += memory.obs
         mem_actions += memory.actions
         mem_rewards += memory.rewards
@@ -77,17 +78,17 @@ def imitate(memory_path=None,
         obs, actions, rewards, dones  = next(imitation_generator)
         weights = [counts[action] for action in actions]
         p_obs, p_actions, p_rewards, p_dones  = next(prior_generator)
-        obs = np.asarray(obs + p_obs)
-        actions = np.asarray(actions + p_actions)
-        rewards = np.asarray(rewards + p_rewards)
-        dones = np.asarray(dones + p_dones)
+        obs = obs + p_obs
+        actions = np.asarray(actions + p_actions).astype(np.float32)
+        rewards = np.asarray(rewards + p_rewards).astype(np.float32)
+        dones = np.asarray(dones + p_dones).astype(np.float32)
 
         obs = model.process_inputs(obs)
         with tf.GradientTape() as tape:
             logits, values, states = model([obs, states, dones])
             logits = tf.nn.softmax(logits)
 
-            # Calculate cross entropy loss            
+            # Calculate cross entropy loss
             scce = tf.keras.losses.SparseCategoricalCrossentropy()
             scce_loss = scce(actions[0:batch_size], logits[0:batch_size], sample_weight=weights)
             
@@ -120,10 +121,10 @@ def imitate(memory_path=None,
     print("Checkpoint saved to {}".format(_save_path))
 
 def main(args,
-         train_steps=2500,
+         train_steps=10000,
          learning_rate=0.0000042,
-         kl_reg=0.25,
-         num_steps=100,
+         kl_reg=10,
+         num_steps=50,
          num_actions=6,
          stack_size=1,
          actor_fc=[128],
@@ -148,7 +149,10 @@ def main(args,
                                       lstm_size=lstm_size,
                                       conv_size=conv_size,
                                       retro=True)
-    prior.load_weights(args.restore)
+    if args.prior is not None:
+        prior.load_weights(args.prior)
+    else:
+        prior.load_weights(args.restore)
 
     # Build model
     model = LSTMActorCriticModel(num_actions=num_actions,
@@ -184,6 +188,7 @@ if __name__ == '__main__':
     parser.add_argument('--memory-path', type=str, default=None)
     parser.add_argument('--prior-memory-path', type=str, default=None)
     parser.add_argument('--restore', type=str, default=None)
+    parser.add_argument('--prior', type=str, default=None)
     parser.add_argument('--output-dir', type=str, default='/tmp/prierarchy_imitation')
     args = parser.parse_args()
 

@@ -21,9 +21,10 @@ def concatenate_memories(memories_dir, output_filepath):
     for memory_filename in memory_files_list:
         memory_filepath = os.path.join(memories_dir, memory_filename)
         mem_file = open(memory_filepath, 'rb')
-        memory = pickle.load(mem_file)
+        memory_list = pickle.load(mem_file)
         mem_file.close()
-        complete_memory = complete_memory + memory
+        for memory in memory_list:
+            complete_memory.append(memory)
     output_file = open(output_filepath, 'wb+')
     pickle.dump(complete_memory, output_file)
     output_file.close()
@@ -39,23 +40,30 @@ def input_action():  #   0    1    2    3    4    5    6
         else:
             print("Invalid input.")
 
-def run(env, floor, seed):
+def run(env, floor, seed, model):
     seed = np.random.randint(0, 100) if seed == -1 else seed
     env._obstacle_tower_env.seed(seed)
     env.floor(floor)
 
     mem = Memory()
     observation, info = env.reset()
-    done = np.float32(1)
-    new_done = np.float32(0)
+    new_done, done = np.zeros((1,)).astype(np.float32), np.zeros((1,)).astype(np.float32)
+    done[0] = 1
+    if model is not None:
+        state = np.zeros((1, model.lstm_size * 2)).astype(np.float32)
     
     while not new_done:
-        action = input_action()
-        if action == 6:
-            break
+        expert_action = input_action()
+        if model is not None and expert_action != 6:
+            action, _, _, state = model.step(np.asarray([observation]), state, new_done)
+        else:
+            while expert_action == 6:
+                expert_action = input_action()
+            action = expert_action
         new_observation, reward, new_done, info = env.step(action)
-        mem.store(observation, action, reward, np.array([done]))
+        mem.store(observation, expert_action, reward, done)
         observation = new_observation
+        new_done = np.array([new_done])
         done = new_done
     return mem
 
@@ -69,6 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--floor', type=int, default=10)
     parser.add_argument('--seed', type=int, default=-1)
     parser.add_argument('--concat-dir', type=str, default=None)
+    parser.add_argument('--restore', type=str, default=None)
     args = parser.parse_args()
 
     #INITIALIZE VARIABLES#
@@ -77,11 +86,10 @@ if __name__ == '__main__':
     episodes = args.episodes
     period = args.period
 
+    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+
     if args.concat_dir:
         concatenate_memories(args.concat_dir, output_filepath)
-
-    memory_buffer = []
-    print("Created new memory buffer.")
 
     #BUILD ENVIRONMENT#
     print("Building environment...")
@@ -92,12 +100,30 @@ if __name__ == '__main__':
                   retro=True)
     print("Environment built.")
 
+    if args.restore:
+        print("Restoring model...")
+        model = LSTMActorCriticModel(num_actions=6,
+                                     state_size=env.state_size,
+                                     stack_size=env.stack_size,
+                                     num_steps=40,
+                                     num_envs=1,
+                                     max_floor=25,
+                                     before_fc=[256],
+                                     actor_fc=[128],
+                                     conv_size="quake",
+                                     critic_fc=[128],
+                                     lstm_size=256)
+        model.load_weights(args.restore)
+        print("Model restored.")
+    else:
+        model = None
+
     #INSTANTIATE MEMORY BUFFER#
-    os.makedirs(os.path.dirname(output_filepath), exist_ok=True)
+    memory_buffer = []
     print("Time to play!")
     for episode in range(1,episodes+1):
         print("Current episode: {}".format(episode))
-        mem = run(env, args.floor, args.seed)
+        mem = run(env, args.floor, args.seed, model)
         memory_buffer.append(mem)
         if episode % period == 0:
             output_file = open(output_filepath, 'wb+')
