@@ -18,7 +18,8 @@ def imitate(memory_path=None,
             batch_size=40,
             kl_reg=0.01,
             num_actions=6,
-            checkpoint_period=50):
+            checkpoint_period=50,
+            wandb=None):
     # Load human input from pickle file and concatenate together
     data_file = open(memory_path, 'rb')
     memory_list = pickle.load(data_file)
@@ -112,9 +113,10 @@ def imitate(memory_path=None,
         print("Total Loss: {} | SCCE Loss: {} | KL Loss: {}".format(total_loss, scce_loss, kl_loss))
         print("Accuracy: {}".format(accuracy))
 
+        logging_period = 10
         if train_step % logging_period == 0:
-            if self.wandb != None:
-                self.wandb.log({"Train Step": train_step,
+            if wandb != None:
+                wandb.log({"Train Step": train_step,
                                 "Accuracy": accuracy,
                                 "Total Loss": total_loss,
                                 "SCCE Loss": scce_loss,
