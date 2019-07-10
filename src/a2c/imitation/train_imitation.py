@@ -72,16 +72,16 @@ def imitate(memory_path=None,
     # Build generator that maintains multiple prior sequences
     def build_prior_gen(g_p_mem_obs, g_p_mem_actions, g_p_mem_rewards, g_p_mem_dones):
         prior_gens = []
-        num_done = sum(g_p_mem_dones)
         done_index = [i for i, d in enumerate(g_p_mem_dones) if d == 1.0] + [None]
+        num_dones = len(done_index) - 1
         if num_prior > num_dones != 0:
             raise ValueError("Number of dones ({}) must\
                               be greater than num_prior ({})".format(num_dones, num_prior))
 
-        num_long_seq = num_done % num_prior
+        num_long_seq = num_dones % num_prior
         num_short_seq = num_prior - num_long_seq
 
-        len_short_seq = done_count // num_prior
+        len_short_seq = num_dones // num_prior
         len_long_seq = len_short_seq + 1
 
         num_short_done = num_short_seq * len_short_seq
@@ -222,7 +222,7 @@ def main(args,
     model.load_weights(args.restore)
 
     opt = tf.optimizers.Adam(learning_rate)
-    os.makedirs(os.path.dirname(args.output_dir), exist_ok=True)
+    os.makedirs(os.path.dirname(args.output_dir + "/test"), exist_ok=True)
 
     if args.wandb:
         import wandb
