@@ -74,15 +74,28 @@ def imitate(memory_path=None,
         prior_gens = []
         num_done = sum(g_p_mem_dones)
         done_index = [i for i, d in enumerate(g_p_mem_dones) if d == 1.0] + [None]
-        len_seq = done_count // num_prior
-        if num_dones % num_prior != 0:
-            raise ValueError("Number of completed floors ({}) must\
-                              be divisible by num_prior ({})".format(num_dones, num_prior))
-        for i in range(0, num_done, len_seq):
-            prior_gens.append(build_gen(g_p_mem_obs[done_index[i]:done_index[i + len_seq]],
-                                        g_p_mem_actions[done_index[i]:done_index[i + len_seq]],
-                                        g_p_mem_rewards[done_index[i]:done_index[i + len_seq]],
-                                        g_p_mem_dones[done_index[i]:done_index[i + len_seq]]))
+        if num_prior > num_dones != 0:
+            raise ValueError("Number of dones ({}) must\
+                              be greater than num_prior ({})".format(num_dones, num_prior))
+
+        num_long_seq = num_done % num_prior
+        num_short_seq = num_prior - num_long_seq
+
+        len_short_seq = done_count // num_prior
+        len_long_seq = len_short_seq + 1
+
+        num_short_done = num_short_seq * len_short_seq
+        num_long_done = num_long_seq * len_long_seq
+        for i in range(0, num_short_done, len_short_seq):
+            prior_gens.append(build_gen(g_p_mem_obs[done_index[i]:done_index[i + len_short_seq]],
+                                        g_p_mem_actions[done_index[i]:done_index[i + len_short_seq]],
+                                        g_p_mem_rewards[done_index[i]:done_index[i + len_short_seq]],
+                                        g_p_mem_dones[done_index[i]:done_index[i + len_short_seq]]))
+        for i in range(num_short_done, num_short_done + num_long_done, len_long_seq):
+            prior_gens.append(build_gen(g_p_mem_obs[done_index[i]:done_index[i + len_long_seq]],
+                                        g_p_mem_actions[done_index[i]:done_index[i + len_long_seq]],
+                                        g_p_mem_rewards[done_index[i]:done_index[i + len_long_seq]],
+                                        g_p_mem_dones[done_index[i]:done_index[i + len_long_seq]]))
         while True:
             y_mem_obs, y_mem_actions, y_mem_rewards, y_mem_dones = [], [], [], []
             for g in prior_gens:
