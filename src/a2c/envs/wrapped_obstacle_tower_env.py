@@ -20,6 +20,7 @@ class WrappedObstacleTowerEnv():
         mobilenet=False,
         gray_scale=False,
         floor=0,
+        visual_theme=0
         ):
         '''
         Arguments:
@@ -61,6 +62,7 @@ class WrappedObstacleTowerEnv():
         self.total_reward = 0
         self.current_reward = 0
         self.max_floor = 25
+        self.visual_theme = visual_theme
 
         self.id = worker_id
 
@@ -86,7 +88,8 @@ class WrappedObstacleTowerEnv():
     def reset(self):
         # Reset env, stack and floor
         # (We save state as an attribute so child objects can access it)
-        config = {"total-floors": 15}
+        config = {"total-floors": 15,
+                  "visual-theme": self.visual_theme}
         self.state = self._obstacle_tower_env.reset(config)
         self.state, reward, done, info = self._obstacle_tower_env.step(18)
         self.current_floor = self.start_floor
