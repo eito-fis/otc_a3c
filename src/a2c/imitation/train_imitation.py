@@ -76,7 +76,7 @@ def imitate(memory_path=None,
         num_dones = len(done_index) - 1
         if num_prior > num_dones != 0:
             raise ValueError("Number of dones ({}) must\
-                              be greater than num_prior ({})".format(num_dones, num_prior))
+                              be greater than num_prior ({})".format(num_done, num_prior))
 
         num_long_seq = num_dones % num_prior
         num_short_seq = num_prior - num_long_seq
