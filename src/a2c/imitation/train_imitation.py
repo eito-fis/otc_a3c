@@ -74,15 +74,15 @@ def imitate(memory_path=None,
         prior_gens = []
         num_done = sum(g_p_mem_dones)
         done_index = [i for i, d in enumerate(g_p_mem_dones) if d == 1.0] + [None]
-        if num_prior > num_dones != 0:
+        if num_prior > num_done != 0:
             raise ValueError("Number of dones ({}) must\
-                              be greater than num_prior ({})".format(num_dones, num_prior))
+                              be greater than num_prior ({})".format(num_done, num_prior))
 
-        num_long_seq = num_done % num_prior
-        num_short_seq = num_prior - num_long_seq
+        num_long_seq = int(num_done % num_prior)
+        num_short_seq = int(num_prior - num_long_seq)
 
-        len_short_seq = done_count // num_prior
-        len_long_seq = len_short_seq + 1
+        len_short_seq = int(num_done // num_prior)
+        len_long_seq = int(len_short_seq + 1)
 
         num_short_done = num_short_seq * len_short_seq
         num_long_done = num_long_seq * len_long_seq
