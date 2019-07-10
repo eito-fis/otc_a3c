@@ -26,7 +26,7 @@ def main(args,
          before_fc=[256],
          lstm_size=256,
          conv_size="quake",
-         visual_theme=2,
+         visual_theme=0,
          logging_period=1,
          checkpoint_period=50):
 
