@@ -17,6 +17,7 @@ def imitate(memory_path=None,
             train_steps=1000,
             batch_size=40,
             kl_reg=0.01,
+            num_prior=10,
             num_actions=6,
             checkpoint_period=50,
             wandb=None):
@@ -67,24 +68,51 @@ def imitate(memory_path=None,
                        g_mem_rewards[start:end],
                        g_mem_dones[start:end])
             start = end
+
+    # Build generator that maintains multiple prior sequences
+    def build_prior_gen(g_p_mem_obs, g_p_mem_actions, g_p_mem_rewards, g_p_mem_dones):
+        prior_gens = []
+        num_done = sum(g_p_mem_dones)
+        done_index = [i for i, d in enumerate(g_p_mem_dones) if d == 1.0] + [None]
+        len_seq = done_count // num_prior
+        if num_dones % num_prior != 0:
+            raise ValueError("Number of completed floors ({}) must\
+                              be divisible by num_prior ({})".format(num_dones, num_prior))
+        for i in range(0, num_done, len_seq):
+            prior_gens.append(build_gen(g_p_mem_obs[done_index[i]:done_index[i + len_seq]],
+                                        g_p_mem_actions[done_index[i]:done_index[i + len_seq]],
+                                        g_p_mem_rewards[done_index[i]:done_index[i + len_seq]],
+                                        g_p_mem_dones[done_index[i]:done_index[i + len_seq]]))
+        while True:
+            y_mem_obs, y_mem_actions, y_mem_rewards, y_mem_dones = [], [], [], []
+            for g in prior_gens:
+                g_y_mem_obs, g_y_mem_actions, g_y_mem_rewards, g_y_mem_dones = next(g)
+                y_mem_obs += g_y_mem_obs
+                y_mem_actions += g_y_mem_actions
+                y_mem_rewards += g_y_mem_rewards
+                y_mem_dones += g_y_mem_dones
+            yield (y_mem_obs, y_mem_actions, y_mem_rewards, y_mem_dones)
+            
+
     imitation_generator = build_gen(mem_obs, mem_actions, mem_rewards, mem_dones)
-    prior_generator = build_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones)
+    prior_generator = build_prior_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones)
 
     small_value = 0.0000001
-    states = np.zeros((2, model.lstm_size * 2)).astype(np.float32)
-    prior_states = np.zeros((2, model.lstm_size * 2)).astype(np.float32)
+    states = np.zeros((num_prior + 1, model.lstm_size * 2)).astype(np.float32)
+    prior_states = np.zeros((num_prior + 1, model.lstm_size * 2)).astype(np.float32)
     print("Starting steps...")
     for train_step in range(train_steps):
         # Combine prior and imitation batches
         obs, actions, rewards, dones  = next(imitation_generator)
         weights = [counts[action] for action in actions]
         p_obs, p_actions, p_rewards, p_dones  = next(prior_generator)
+
         obs = obs + p_obs
+        obs = model.process_inputs(obs)
         actions = np.asarray(actions + p_actions).astype(np.float32)
         rewards = np.asarray(rewards + p_rewards).astype(np.float32)
         dones = np.asarray(dones + p_dones).astype(np.float32)
 
-        obs = model.process_inputs(obs)
         with tf.GradientTape() as tape:
             logits, values, states = model([obs, states, dones])
             logits = tf.nn.softmax(logits)
@@ -135,6 +163,7 @@ def main(args,
          train_steps=10000,
          learning_rate=0.0000042,
          kl_reg=10,
+         num_prior=5,
          num_steps=50,
          num_actions=6,
          stack_size=1,
@@ -153,7 +182,7 @@ def main(args,
                                       state_size=[84,84,3],
                                       stack_size=1,
                                       num_steps=num_steps,
-                                      num_envs=2,
+                                      num_envs=num_prior,
                                       actor_fc=actor_fc,
                                       critic_fc=critic_fc,
                                       before_fc=before_fc,
@@ -170,7 +199,7 @@ def main(args,
                                       state_size=[84,84,3],
                                       stack_size=1,
                                       num_steps=num_steps,
-                                      num_envs=2,
+                                      num_envs=num_prior,
                                       actor_fc=actor_fc,
                                       critic_fc=critic_fc,
                                       before_fc=before_fc,
@@ -196,6 +225,7 @@ def main(args,
                                  "Restore": args.restore,
                                  "Train Steps": train_steps,
                                  "KL Reg": kl_reg,
+                                 "Num Prior": num_prior,
                                  "Checkpoint Period": checkpoint_period})
     else: wandb = None
 
@@ -208,6 +238,7 @@ def main(args,
             train_steps=train_steps,
             batch_size=num_steps,
             kl_reg=kl_reg,
+            num_prior=num_prior,
             checkpoint_period=checkpoint_period,
             wandb=wandb)
     
