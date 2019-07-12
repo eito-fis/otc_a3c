@@ -54,11 +54,11 @@ def run(env, floor, seed, model):
     
     while not new_done:
         expert_action = input_action()
-        if model is not None and expert_action != 6:
-            action, _, _, state = model.step(np.asarray([observation]), state, new_done)
-        else:
+        if model is not None and expert_action == 6:
             while expert_action == 6:
                 expert_action = input_action()
+            action, _, _, state = model.step(np.asarray([observation]), state, new_done)
+        else:
             action = expert_action
         new_observation, reward, new_done, info = env.step(action)
         mem.store(observation, expert_action, reward, done)
