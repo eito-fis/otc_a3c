@@ -17,6 +17,7 @@ class LSTMEnv(WrappedObstacleTowerEnv):
         mobilenet=False,
         gray_scale=False,
         floor=0,
+        visual_theme=0
         ):
         '''
         Arguments:
@@ -40,7 +41,8 @@ class LSTMEnv(WrappedObstacleTowerEnv):
                          stack_size=stack_size,
                          mobilenet=mobilenet,
                          gray_scale=gray_scale,
-                         floor=floor)
+                         floor=floor,
+                         visual_theme=visual_theme)
 
     def reset(self):
         ret_state, info = super().reset()

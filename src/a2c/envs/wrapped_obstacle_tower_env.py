@@ -20,6 +20,7 @@ class WrappedObstacleTowerEnv():
         mobilenet=False,
         gray_scale=False,
         floor=0,
+        visual_theme=0
         ):
         '''
         Arguments:
@@ -61,6 +62,7 @@ class WrappedObstacleTowerEnv():
         self.total_reward = 0
         self.current_reward = 0
         self.max_floor = 25
+        self.visual_theme = visual_theme
 
         self.id = worker_id
 

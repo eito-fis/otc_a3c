@@ -26,6 +26,7 @@ def main(args,
          before_fc=[256],
          lstm_size=256,
          conv_size="quake",
+         visual_theme=0,
          logging_period=1,
          checkpoint_period=50):
 
@@ -79,7 +80,8 @@ def main(args,
                        mobilenet=args.mobilenet,
                        gray_scale=args.gray,
                        realtime_mode=args.render,
-                       retro=args.retro)
+                       retro=args.retro,
+                       visual_theme=visual_theme)
     env_func_list = [env_func for _ in range(num_envs)]
     env = ParallelEnv(env_func_list)
 
