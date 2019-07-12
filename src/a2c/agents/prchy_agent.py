@@ -111,7 +111,10 @@ class PrierarchyAgent(LSTMAgent):
                                               before_fc=before_fc,
                                               lstm_size=lstm_size,
                                               retro=retro)
-            self.model.load_weights(restore_path)
+            if restore_path != None:
+                self.model.load_weights(restore_path)
+            else:
+                self.model.load_weights(prior_dir)
 
                                           
             # Build runner
