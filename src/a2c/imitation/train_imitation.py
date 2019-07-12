@@ -173,10 +173,10 @@ def imitate(memory_path=None,
     print("Checkpoint saved to {}".format(_save_path))
 
 def main(args,
-         train_steps=10000,
+         train_steps=100000,
          learning_rate=0.0000042,
-         kl_reg=10,
-         num_prior=5,
+         kl_reg=1,
+         num_prior=10,
          num_steps=50,
          num_actions=6,
          stack_size=1,
