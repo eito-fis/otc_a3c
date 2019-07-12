@@ -31,8 +31,10 @@ def imitate(memory_path=None,
     data_file.close()
     print("Loaded files!")
 
+    validation_len = len(memory_list) // 10
+
     mem_obs, mem_actions, mem_rewards, mem_dones = [], [], [], []
-    for memory in memory_list:
+    for memory in memory_list[:-validation_len]:
         if 6 in memory.actions: continue
         mem_obs += memory.obs
         mem_actions += memory.actions
@@ -42,6 +44,14 @@ def imitate(memory_path=None,
     for a in mem_actions:
         if a < num_actions: counts[a] += 1
     counts = [(sum(counts) - c) / sum(counts) for c in counts]
+
+    val_mem_obs, val_mem_actions, val_mem_rewards, val_mem_dones = [], [], [], []
+    for memory in memory_list[-validation_len:]:
+        if 6 in memory.actions: continue
+        val_mem_obs += memory.obs
+        val_mem_actions += memory.actions
+        val_mem_rewards += memory.rewards
+        val_mem_dones += memory.dones
 
     prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones = [], [], [], []
     for memory in prior_memory_list:
@@ -70,7 +80,7 @@ def imitate(memory_path=None,
             start = end
 
     # Build generator that maintains multiple prior sequences
-    def build_prior_gen(g_p_mem_obs, g_p_mem_actions, g_p_mem_rewards, g_p_mem_dones):
+    def build_multi_gen(g_p_mem_obs, g_p_mem_actions, g_p_mem_rewards, g_p_mem_dones):
         prior_gens = []
         done_index = [i for i, d in enumerate(g_p_mem_dones) if d == 1.0] + [None]
         num_dones = len(done_index) - 1
@@ -108,23 +118,25 @@ def imitate(memory_path=None,
             
 
     imitation_generator = build_gen(mem_obs, mem_actions, mem_rewards, mem_dones)
-    prior_generator = build_prior_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones)
+    validation_generator = build_gen(val_mem_obs, val_mem_actions, val_mem_rewards, val_mem_dones)
+    prior_generator = build_multi_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones)
 
     small_value = 0.0000001
-    states = np.zeros((num_prior + 1, model.lstm_size * 2)).astype(np.float32)
-    prior_states = np.zeros((num_prior + 1, model.lstm_size * 2)).astype(np.float32)
+    states = np.zeros((num_prior + 2, model.lstm_size * 2)).astype(np.float32)
+    prior_states = np.zeros((num_prior + 2, model.lstm_size * 2)).astype(np.float32)
     print("Starting steps...")
     for train_step in range(train_steps):
         # Combine prior and imitation batches
         obs, actions, rewards, dones  = next(imitation_generator)
         weights = [counts[action] for action in actions]
+        v_obs, v_actions, v_rewards, v_dones  = next(validation_generator)
         p_obs, p_actions, p_rewards, p_dones  = next(prior_generator)
 
-        obs = obs + p_obs
+        obs = obs + p_obs + v_obs
         obs = model.process_inputs(obs)
-        actions = np.asarray(actions + p_actions).astype(np.float32)
-        rewards = np.asarray(rewards + p_rewards).astype(np.float32)
-        dones = np.asarray(dones + p_dones).astype(np.float32)
+        actions = np.asarray(actions + p_actions + v_actions).astype(np.float32)
+        rewards = np.asarray(rewards + p_rewards + v_rewards).astype(np.float32)
+        dones = np.asarray(dones + p_dones + v_dones).astype(np.float32)
 
         with tf.GradientTape() as tape:
             logits, values, states = model([obs, states, dones])
@@ -137,8 +149,10 @@ def imitate(memory_path=None,
             # Calculate KL loss
             prior_logits, _, prior_states = prior([obs, prior_states, dones])
             prior_logits = tf.nn.softmax(prior_logits)
-            kl_loss = tf.reduce_mean(prior_logits *
-                                     tf.math.log(prior_logits / (logits + small_value) + small_value))
+            kl_loss = tf.reduce_mean(prior_logits[:-batch_size] *
+                                     tf.math.log(prior_logits[:-batch_size] /
+                                                 (logits[:-batch_size] + small_value)
+                                                 + small_value))
             
             total_loss = scce_loss + (kl_reg * kl_loss)
 
@@ -150,15 +164,20 @@ def imitate(memory_path=None,
         correct = [1 if t == p else 0 for t, p in zip(actions[0:batch_size], predict_actions)]
         accuracy = sum(correct) / len(correct)
 
+        v_predict_actions = [np.argmax(distribution) for distribution in logits[-batch_size:]]
+        v_correct = [1 if t == p else 0 for t, p in zip(actions[-batch_size:], v_predict_actions)]
+        v_accuracy = sum(v_correct) / len(v_correct)
+
         print("Step: {}".format(train_step, total_loss))
         print("Total Loss: {} | SCCE Loss: {} | KL Loss: {}".format(total_loss, scce_loss, kl_loss))
-        print("Accuracy: {}".format(accuracy))
+        print("Accuracy: {} | Validation Accuracy {}".format(accuracy, v_accuracy))
 
         logging_period = 1
         if train_step % logging_period == 0:
             if wandb != None:
                 wandb.log({"Train Step": train_step,
                                 "Accuracy": accuracy,
+                                "Validation Accuracy": v_accuracy,
                                 "Total Loss": total_loss.numpy(),
                                 "SCCE Loss": scce_loss.numpy(),
                                 "KL Loss": kl_loss.numpy()})
