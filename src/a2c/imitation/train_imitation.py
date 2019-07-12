@@ -19,7 +19,7 @@ def imitate(memory_path=None,
             kl_reg=0.01,
             num_prior=10,
             num_actions=6,
-            checkpoint_period=50,
+            checkpoint_period=100,
             wandb=None):
     # Load human input from pickle file and concatenate together
     data_file = open(memory_path, 'rb')
@@ -146,22 +146,22 @@ def imitate(memory_path=None,
         total_grads = tape.gradient(total_loss, model.trainable_weights)
         opt.apply_gradients(zip(total_grads, model.trainable_weights))
 
-        predict_actions = [np.argmax(distribution) for distribution in logits]
-        correct = [1 if t == p else 0 for t, p in zip(actions, predict_actions)]
+        predict_actions = [np.argmax(distribution) for distribution in logits[0:batch_size]]
+        correct = [1 if t == p else 0 for t, p in zip(actions[0:batch_size], predict_actions)]
         accuracy = sum(correct) / len(correct)
 
         print("Step: {}".format(train_step, total_loss))
         print("Total Loss: {} | SCCE Loss: {} | KL Loss: {}".format(total_loss, scce_loss, kl_loss))
         print("Accuracy: {}".format(accuracy))
 
-        logging_period = 10
+        logging_period = 1
         if train_step % logging_period == 0:
             if wandb != None:
                 wandb.log({"Train Step": train_step,
                                 "Accuracy": accuracy,
-                                "Total Loss": total_loss,
-                                "SCCE Loss": scce_loss,
-                                "KL Loss": kl_loss})
+                                "Total Loss": total_loss.numpy(),
+                                "SCCE Loss": scce_loss.numpy(),
+                                "KL Loss": kl_loss.numpy()})
         if train_step % checkpoint_period == 0:
             _save_path = os.path.join(output_dir, "imitation_model_{}.h5".format(train_step))
             model.save_weights(_save_path)
@@ -174,7 +174,7 @@ def imitate(memory_path=None,
 
 def main(args,
          train_steps=10000,
-         learning_rate=0.0000042,
+         learning_rate=0.00042,
          kl_reg=10,
          num_prior=5,
          num_steps=50,
