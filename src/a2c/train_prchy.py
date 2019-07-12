@@ -109,6 +109,7 @@ def main(args,
                             checkpoint_period=checkpoint_period,
                             output_dir=args.output_dir,
                             prior_dir=args.prior,
+                            restore_path=args.restore,
                             wandb=wandb)
     print("Agent built!")
 
@@ -128,6 +129,10 @@ if __name__ == '__main__':
     # File path arguments
     parser.add_argument(
         '--prior',
+        type=str,
+        default=None)
+    parser.add_argument(
+        '--restore',
         type=str,
         default=None)
     parser.add_argument(

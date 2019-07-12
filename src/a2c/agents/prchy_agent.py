@@ -53,6 +53,7 @@ class PrierarchyAgent(LSTMAgent):
                  checkpoint_period=50,
                  output_dir="/tmp/a2c",
                  prior_dir=None,
+                 restore_path=None,
                  wandb=None,
                  build=True):
 
@@ -110,7 +111,7 @@ class PrierarchyAgent(LSTMAgent):
                                               before_fc=before_fc,
                                               lstm_size=lstm_size,
                                               retro=retro)
-            self.model.load_weights(prior_dir)
+            self.model.load_weights(restore_path)
 
                                           
             # Build runner
