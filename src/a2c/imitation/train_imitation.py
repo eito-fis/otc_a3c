@@ -17,6 +17,8 @@ def imitate(memory_path=None,
             train_steps=1000,
             batch_size=40,
             kl_reg=0.01,
+            num_mem=10,
+            num_val=10,
             num_prior=10,
             num_actions=6,
             checkpoint_period=100,
@@ -80,18 +82,18 @@ def imitate(memory_path=None,
             start = end
 
     # Build generator that maintains multiple prior sequences
-    def build_multi_gen(g_p_mem_obs, g_p_mem_actions, g_p_mem_rewards, g_p_mem_dones):
+    def build_multi_gen(g_p_mem_obs, g_p_mem_actions, g_p_mem_rewards, g_p_mem_dones, num_gen):
         prior_gens = []
         done_index = [i for i, d in enumerate(g_p_mem_dones) if d == 1.0] + [None]
         num_dones = len(done_index) - 1
-        if num_prior > num_dones != 0:
+        if num_gen > num_dones != 0:
             raise ValueError("Number of dones ({}) must\
-                              be greater than num_prior ({})".format(num_done, num_prior))
+                              be greater than num_gen ({})".format(num_dones, num_gen))
 
-        num_long_seq = num_dones % num_prior
-        num_short_seq = num_prior - num_long_seq
+        num_long_seq = num_dones % num_gen
+        num_short_seq = num_gen - num_long_seq
 
-        len_short_seq = num_dones // num_prior
+        len_short_seq = num_dones // num_gen
         len_long_seq = len_short_seq + 1
 
         num_short_done = num_short_seq * len_short_seq
@@ -117,13 +119,13 @@ def imitate(memory_path=None,
             yield (y_mem_obs, y_mem_actions, y_mem_rewards, y_mem_dones)
             
 
-    imitation_generator = build_gen(mem_obs, mem_actions, mem_rewards, mem_dones)
-    validation_generator = build_gen(val_mem_obs, val_mem_actions, val_mem_rewards, val_mem_dones)
-    prior_generator = build_multi_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones)
+    imitation_generator = build_multi_gen(mem_obs, mem_actions, mem_rewards, mem_dones, num_mem)
+    validation_generator = build_multi_gen(val_mem_obs, val_mem_actions, val_mem_rewards, val_mem_dones, num_val)
+    prior_generator = build_multi_gen(prior_mem_obs, prior_mem_actions, prior_mem_rewards, prior_mem_dones, num_prior)
 
     small_value = 0.0000001
-    states = np.zeros((num_prior + 2, model.lstm_size * 2)).astype(np.float32)
-    prior_states = np.zeros((num_prior + 2, model.lstm_size * 2)).astype(np.float32)
+    states = np.zeros((num_mem + num_val + num_prior, model.lstm_size * 2)).astype(np.float32)
+    prior_states = np.zeros((num_mem + num_val + num_prior, model.lstm_size * 2)).astype(np.float32)
     print("Starting steps...")
     for train_step in range(train_steps):
         # Combine prior and imitation batches
@@ -144,14 +146,14 @@ def imitate(memory_path=None,
 
             # Calculate cross entropy loss
             scce = tf.keras.losses.SparseCategoricalCrossentropy()
-            scce_loss = scce(actions[0:batch_size], logits[0:batch_size], sample_weight=weights)
+            scce_loss = scce(actions[0:batch_size * num_mem], logits[0:batch_size * num_mem], sample_weight=weights)
             
             # Calculate KL loss
             prior_logits, _, prior_states = prior([obs, prior_states, dones])
             prior_logits = tf.nn.softmax(prior_logits)
-            kl_loss = tf.reduce_mean(prior_logits[:-batch_size] *
-                                     tf.math.log(prior_logits[:-batch_size] /
-                                                 (logits[:-batch_size] + small_value)
+            kl_loss = tf.reduce_mean(prior_logits[:-batch_size * num_val] *
+                                     tf.math.log(prior_logits[:-batch_size * num_val] /
+                                                 (logits[:-batch_size * num_val] + small_value)
                                                  + small_value))
             
             total_loss = scce_loss + (kl_reg * kl_loss)
@@ -160,12 +162,12 @@ def imitate(memory_path=None,
         total_grads = tape.gradient(total_loss, model.trainable_weights)
         opt.apply_gradients(zip(total_grads, model.trainable_weights))
 
-        predict_actions = [np.argmax(distribution) for distribution in logits[0:batch_size]]
-        correct = [1 if t == p else 0 for t, p in zip(actions[0:batch_size], predict_actions)]
+        predict_actions = [np.argmax(distribution) for distribution in logits[0:batch_size * num_mem]]
+        correct = [1 if t == p else 0 for t, p in zip(actions[0:batch_size * num_mem], predict_actions)]
         accuracy = sum(correct) / len(correct)
 
-        v_predict_actions = [np.argmax(distribution) for distribution in logits[-batch_size:]]
-        v_correct = [1 if t == p else 0 for t, p in zip(actions[-batch_size:], v_predict_actions)]
+        v_predict_actions = [np.argmax(distribution) for distribution in logits[-batch_size * num_val:]]
+        v_correct = [1 if t == p else 0 for t, p in zip(actions[-batch_size * num_val:], v_predict_actions)]
         v_accuracy = sum(v_correct) / len(v_correct)
 
         print("Step: {}".format(train_step, total_loss))
@@ -195,6 +197,8 @@ def main(args,
          train_steps=10000,
          learning_rate=0.00042,
          kl_reg=10,
+         num_mem=5,
+         num_val=1,
          num_prior=5,
          num_steps=50,
          num_actions=6,
@@ -270,6 +274,8 @@ def main(args,
             train_steps=train_steps,
             batch_size=num_steps,
             kl_reg=kl_reg,
+            num_mem=num_mem,
+            num_val=num_val,
             num_prior=num_prior,
             checkpoint_period=checkpoint_period,
             wandb=wandb)
