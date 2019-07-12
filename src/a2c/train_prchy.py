@@ -73,15 +73,24 @@ def main(args,
                              "gae": args.gae})
     else: wandb = None
 
+    hard_seeds = [94, 17, 54, 1, 8,
+                  95, 83, 50, 82, 30,
+                  14, 85, 21, 67, 19,
+                  67, 74, 11, 22, 0,
+                  74, 68, 13, 28, 39]
     def env_func(idx):
-        return LSTMEnv(args.env_filename,
-                       stack_size=stack_size,
-                       worker_id=idx,
-                       mobilenet=args.mobilenet,
-                       gray_scale=args.gray,
-                       realtime_mode=args.render,
-                       retro=args.retro,
-                       visual_theme=visual_theme)
+        env = LSTMEnv(args.env_filename,
+                      stack_size=stack_size,
+                      worker_id=idx,
+                      mobilenet=args.mobilenet,
+                      gray_scale=args.gray,
+                      realtime_mode=args.render,
+                      retro=args.retro,
+                      visual_theme=visual_theme)
+        if idx < len(hard_seeds) * 2:
+            if idx > len(hard_seeds): idx -= len(hard_seeds)
+            env._obstacle_tower_env.seed(hard_seeds[idx])
+        return env
     env_func_list = [env_func for _ in range(num_envs)]
     env = ParallelEnv(env_func_list)
 
