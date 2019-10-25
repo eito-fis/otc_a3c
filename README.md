@@ -1,5 +1,4 @@
-## OUT OF DATE
-## WILL (?) BE UPDATED
+## README IS OUT OF DATE - WILL (?) BE UPDATED
 
 # Usage
 ### * Collecting Human Replay
